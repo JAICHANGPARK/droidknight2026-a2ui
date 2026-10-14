@@ -1,0 +1,66 @@
+[versions]
+androidGradlePlugin = "9.3.2"
+androidxCore = "1.19.0"
+androidxLifecycle = "2.11.0"
+androidxActivity = "1.13.0"
+androidxComposeBom = "2026.08.00"
+compose = "1.13.0-alpha03"
+composeMaterial3 = "1.5.0-alpha28"
+a2ui = "1.0.0-alpha01"
+androidxTest = "1.7.0"
+androidxTestExt = "1.3.0"
+androidxTestRunner = "1.7.0"
+androidxTestEspresso = "3.7.0"
+coil = "2.7.0"
+coroutines = "1.11.0"
+junit = "4.13.2"
+media3 = "1.11.0"
+kotlin = "2.4.10"
+
+[libraries]
+# Official AndroidX A2UI artifacts from Google Maven (1.0.0-alpha01)
+# Layer 1: Pure Kotlin protocol & processor models (0 Compose imports)
+androidx-a2ui-model = { module = "androidx.a2ui:a2ui-model", version.ref = "a2ui" }
+# Layer 2: Compose Snapshot-backed state & property bindings
+androidx-a2ui-compose-runtime = { module = "androidx.a2ui.compose:compose-runtime", version.ref = "a2ui" }
+# Layer 3: Design-system-agnostic Compose UI catalog & component router
+androidx-a2ui-compose-ui = { module = "androidx.a2ui.compose:compose-ui", version.ref = "a2ui" }
+# Layer 4: Material 3 Basic Catalog V1 & A2uiSurface
+androidx-compose-material3-a2ui = { module = "androidx.compose.material3:material3-a2ui", version.ref = "a2ui" }
+# Layer 5: Deterministic UI Testing (A2uiTestController, A2uiComponentStub, A2uiTestSurface)
+androidx-a2ui-compose-ui-testing = { module = "androidx.a2ui.compose:compose-ui-testing", version.ref = "a2ui" }
+
+# Core Android & Compose dependencies
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "androidxComposeBom" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3", version.ref = "composeMaterial3" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui", version.ref = "compose" }
+androidx-compose-runtime = { group = "androidx.compose.runtime", name = "runtime", version.ref = "compose" }
+androidx-compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version.ref = "compose" }
+androidx-compose-animation = { group = "androidx.compose.animation", name = "animation", version.ref = "compose" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview", version.ref = "compose" }
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4", version.ref = "compose" }
+androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling", version.ref = "compose" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest", version.ref = "compose" }
+androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended", version = "1.7.8" }
+androidx-media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
+androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
+coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidxLifecycle" }
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidxLifecycle" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "androidxLifecycle" }
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version = "1.11.0" }
+junit = { module = "junit:junit", version.ref = "junit" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTest" }
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExt" }
+androidx-test-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "androidxTestEspresso" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
+android-library = { id = "com.android.library", version.ref = "androidGradlePlugin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
