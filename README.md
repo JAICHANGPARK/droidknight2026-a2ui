@@ -33,15 +33,19 @@ droidknight2026-a2ui/
 
 ---
 
-## 📦 사용된 Google Maven 공식 아티팩트 (`gradle/libs.versions.toml`)
+## 📦 사용된 AndroidX A2UI 공식 아티팩트 (`gradle/libs.versions.toml`)
 
-자체 스펙 파서나 AOSP 소스 복사본 없이 **Google Maven (`https://dl.google.com/dl/android/maven2/`)** 배포 아티팩트만 참조합니다:
+자체 스펙 파서나 AOSP 로컬 소스 복제본(`:androidx-a2ui`) 없이 **Google 공식 AndroidX CI 스냅샷 저장소 (`https://androidx.dev/snapshots/latest/artifacts/repository`)** 및 **Google Maven (`https://dl.google.com/dl/android/maven2/`)** 아티팩트만 참조합니다:
 
-- `androidx.a2ui:a2ui-model:1.0.0-alpha01`
-- `androidx.a2ui.compose:compose-runtime:1.0.0-alpha01`
-- `androidx.a2ui.compose:compose-ui:1.0.0-alpha01`
-- `androidx.compose.material3:material3-a2ui:1.0.0-alpha01`
-- `androidx.a2ui.compose:compose-ui-testing:1.0.0-alpha01`
+- `androidx.a2ui:a2ui-model:1.0.0-SNAPSHOT` (또는 `1.0.0-alpha01`)
+- `androidx.a2ui.compose:compose-runtime:1.0.0-SNAPSHOT` (또는 `1.0.0-alpha01`)
+- `androidx.a2ui.compose:compose-ui:1.0.0-SNAPSHOT` (또는 `1.0.0-alpha01`)
+- `androidx.compose.material3:material3-a2ui:1.0.0-SNAPSHOT` (또는 `1.0.0-alpha01`)
+- `androidx.a2ui.compose:compose-ui-testing:1.0.0-SNAPSHOT` (또는 `1.0.0-alpha01`)
+
+### 🔄 최신 `androidx-main` 자동 추적 vs 특정 빌드 고정 (`gradle.properties`)
+- **기본값 (`androidx.a2ui.snapshotBuildId=latest`)**: AOSP `androidx-main` 최신 성공 빌드를 자동 추적합니다 (`./gradlew :app:assembleDebug --refresh-dependencies`로 즉시 최신화 가능).
+- **특정 빌드 고정 (`androidx.a2ui.snapshotBuildId=16602000`)**: 발표 리허설/본 발표 직전 특정 스냅샷 빌드 ID로 고정하여 업스트림 변경으로부터 빌드를 보호할 수 있습니다.
 
 ---
 
