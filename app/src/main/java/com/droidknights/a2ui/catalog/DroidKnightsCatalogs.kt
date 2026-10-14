@@ -93,8 +93,14 @@ import kotlin.math.roundToInt
  */
 object DroidKnightsCatalogs {
 
-    const val BASIC_CATALOG_ID: String =
-        "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json"
+    val BASIC_CATALOG_ID: String = A2uiBasicCatalogV1.CatalogId
+
+    /**
+     * New in `1.0.0-SNAPSHOT` (`A2uiCoreSurfaceActor` commit `343aaa87431`):
+     * Agents sending the `v0_9_1` basic catalog URI automatically resolve to `A2uiBasicCatalogV1.CatalogId` (`v0_9`).
+     */
+    const val BASIC_CATALOG_ID_V0_9_1_ALIAS: String =
+        "https://a2ui.org/specification/v0_9_1/catalogs/basic/catalog.json"
 
     const val CATALOG_ID_V1: String =
         "https://droidknights.com/a2ui/catalog/enterprise/v1"
@@ -1205,9 +1211,21 @@ object MetricSparklineComponent : A2uiComponent {
     val metricNameProperty = A2uiProperty.dynamicString("metricName", required = true)
     val currentValueProperty = A2uiProperty.dynamicString("currentValue", required = true)
     val severityProperty = A2uiProperty.dynamicString("severity", required = false)
+    /**
+     * New in `1.0.0-SNAPSHOT` (`A2uiProperty` commit `8b873c31483`):
+     * `numberList` validates `minItems >= 0`, `maxItems >= 0`, and `minItems <= maxItems` at construction time.
+     */
+    val pointsProperty =
+        A2uiProperty.numberList(
+            key = "points",
+            required = false,
+            minItems = 2,
+            maxItems = 24,
+            description = "Normalized sparkline points (0.0..1.0) with minItems/maxItems schema bounds",
+        )
 
     override val properties: List<A2uiProperty<*>> =
-        listOf(metricNameProperty, currentValueProperty, severityProperty)
+        listOf(metricNameProperty, currentValueProperty, severityProperty, pointsProperty)
 
     @Composable
     override fun A2uiComponentScope.Content(
@@ -1217,6 +1235,16 @@ object MetricSparklineComponent : A2uiComponent {
         val metricName = properties.bind(metricNameProperty) ?: "Latency"
         val currentValue = properties.bind(currentValueProperty) ?: "0ms"
         val severity = properties.bind(severityProperty) ?: "normal"
+        val rawPoints = properties[pointsProperty]
+        val points =
+            remember(rawPoints) {
+                val parsed = rawPoints?.map { it.toFloat().coerceIn(0.05f, 0.98f) }
+                if (parsed != null && parsed.size >= 2) {
+                    parsed
+                } else {
+                    listOf(0.7f, 0.55f, 0.65f, 0.35f, 0.85f, 0.2f, 0.9f)
+                }
+            }
         val accentColor =
             if (severity.equals("critical", ignoreCase = true)) {
                 Color(0xFFEF4444)
@@ -1250,7 +1278,6 @@ object MetricSparklineComponent : A2uiComponent {
                     )
                 }
                 Canvas(modifier = Modifier.width(100.dp).height(32.dp)) {
-                    val points = listOf(0.7f, 0.55f, 0.65f, 0.35f, 0.85f, 0.2f, 0.9f)
                     val stepX = size.width / (points.size - 1)
                     for (i in 0 until points.size - 1) {
                         drawLine(

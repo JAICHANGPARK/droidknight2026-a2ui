@@ -156,8 +156,8 @@ class A2uiPayloadsVerificationTest {
     fun verifyDomainD_FieldDiagnosticsWizard_allSteps() {
         val catalog = DroidKnightsCatalogs.createStandardCatalog()
         for (step in 1..3) {
-            val (initialLines, delayedLine) = buildDiagnosticsWizardJsonl(step, delayHotspotData = false)
-            val allLines = if (delayedLine != null) initialLines + delayedLine else initialLines
+            val (initialLines, delayedLines) = buildDiagnosticsWizardJsonl(step, delayHotspotData = false)
+            val allLines = initialLines + delayedLines
             verifyStreamHasZeroErrors(
                 streamName = "FieldDiagnosticsWizard(step=$step)",
                 catalogs = listOf(catalog),
@@ -169,7 +169,7 @@ class A2uiPayloadsVerificationTest {
         verifyStreamHasZeroErrors(
             streamName = "FieldDiagnosticsWizard(step=1, delayed=true)",
             catalogs = listOf(catalog),
-            lines = delayedInit + listOfNotNull(delayedFollowup),
+            lines = delayedInit + delayedFollowup,
         )
     }
 
@@ -235,4 +235,52 @@ class A2uiPayloadsVerificationTest {
         assertEquals("VALIDATION_FAILED", errors.first().code)
         job.cancel()
     }
+
+    /**
+     * Verifies the 3 post-alpha01 commits in `1.0.0-SNAPSHOT` (`androidx-main`):
+     * 1. `v0_9_1` -> `v0_9` Basic Catalog ID Alias resolution in `A2uiCoreSurfaceActor` (`343aaa87431`)
+     * 2. `A2uiProperty` list `minItems` / `maxItems` bounds validation (`8b873c31483`)
+     * 3. Sorted `required` array in `A2uiObjectSchema` JSON serialization (`39da586fc41`)
+     */
+    @Test
+    fun verifySnapshotNewFeatures_aliasAndListBoundsAndSortedSchema() {
+        // 1. Catalog registered with v0_9 ID accepts createSurface with v0_9_1 catalogId URI
+        val catalogV09 = DroidKnightsCatalogs.createStandardCatalog(DroidKnightsCatalogs.BASIC_CATALOG_ID)
+        val aliasStream =
+            listOf(
+                """{"version":"v0.9.1","createSurface":{"surfaceId":"alias_test","catalogId":"${DroidKnightsCatalogs.BASIC_CATALOG_ID_V0_9_1_ALIAS}","sendDataModel":true}}""",
+                """{"version":"v0.9.1","updateComponents":{"surfaceId":"alias_test","components":[{"id":"root","component":"Text","text":"Resolved via v0.9.1 alias"}]}}""",
+            )
+        verifyStreamHasZeroErrors(
+            streamName = "SnapshotFeature_CatalogIdAlias",
+            catalogs = listOf(catalogV09),
+            lines = aliasStream,
+        )
+
+        // 2. A2uiProperty.numberList throws IllegalArgumentException when minItems > maxItems or negative
+        var threwOnInvertedBounds = false
+        try {
+            androidx.a2ui.compose.runtime.A2uiProperty.numberList(
+                key = "invalidBounds",
+                minItems = 10,
+                maxItems = 2,
+            )
+        } catch (_: IllegalArgumentException) {
+            threwOnInvertedBounds = true
+        }
+        assertTrue(
+            "Expected IllegalArgumentException when minItems > maxItems in 1.0.0-SNAPSHOT",
+            threwOnInvertedBounds,
+        )
+
+        // 3. Sorted required properties in generated JSON schema (even though metricName was declared before currentValue)
+        val compactSchemaJson = catalogV09.toJsonSchemaString().replace("\\s+".toRegex(), "")
+        val sparklineSection = compactSchemaJson.substringAfter("\"MetricSparkline\"")
+        val requiredArray = sparklineSection.substringAfter("\"required\":[").substringBefore("]")
+        assertTrue(
+            "Expected sorted required properties where currentValue precedes metricName, got: $requiredArray",
+            requiredArray.indexOf("\"currentValue\"") in 0 until requiredArray.indexOf("\"metricName\""),
+        )
+    }
 }
+

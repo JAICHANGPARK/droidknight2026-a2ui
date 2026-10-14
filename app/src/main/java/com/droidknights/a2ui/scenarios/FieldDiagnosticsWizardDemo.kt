@@ -72,15 +72,17 @@ fun FieldDiagnosticsWizardDemo() {
             }
         }
 
-        val (initialLines, delayedDataLine) = buildDiagnosticsWizardJsonl(wizardStep, simulateDelayedData)
+        val (initialLines, delayedLines) = buildDiagnosticsWizardJsonl(wizardStep, simulateDelayedData)
         jsonlLines.clear()
         jsonlLines.addAll(initialLines)
         initialLines.forEach { line -> processor.processInput(parser, line) }
 
-        if (delayedDataLine != null) {
+        if (delayedLines.isNotEmpty()) {
             delay(1800)
-            jsonlLines.add(delayedDataLine)
-            processor.processInput(parser, delayedDataLine)
+            delayedLines.forEach { delayedLine ->
+                jsonlLines.add(delayedLine)
+                processor.processInput(parser, delayedLine)
+            }
         }
     }
 
@@ -98,7 +100,7 @@ fun FieldDiagnosticsWizardDemo() {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
-                    text = "🔧 시나리오 D · 세탁기 OE 에러코드 자가진단 위저드 (isReady 프로그레시브 렌더링)",
+                    text = "🔧 시나리오 D · 세탁기 OE 에러코드 자가진단 위저드 (isReady & ShimmerIndicatorGroup)",
                     color = Color.White,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 16.sp,
@@ -106,7 +108,8 @@ fun FieldDiagnosticsWizardDemo() {
                 Text(
                     text =
                         "점검 결과에 따라 같은 Surface ID(\"diag_surface\") 안에서 UI 트리가 단계별로 진화(updateComponents)합니다. " +
-                            "또한 HotspotDiagramCard의 isReady() 오버라이드로 데이터가 도착할 때까지 Material 3 쉬머 스켈레톤이 자동 표시됩니다.",
+                            "1.0.0-SNAPSHOT에 신규 추가된 v0.9.1 카탈로그 ID 별칭(Alias) 호환과 MaterialA2uiDefaults.LoadingIndicatorGroup의 " +
+                            "다중 컴포넌트 방사형 쉬머(ShimmerIndicator) 애니메이션을 확인할 수 있습니다.",
                     color = Color(0xFFCBD5E1),
                     fontSize = 12.sp,
                 )
@@ -137,7 +140,7 @@ fun FieldDiagnosticsWizardDemo() {
                             }
                         }
                     ) {
-                        Text("⏳ 1.8초 지연 데이터 스트리밍 재현 (isReady 스켈레톤 확인)", fontSize = 12.sp)
+                        Text("⏳ 1.8초 지연 스트리밍 재현 (신규 ShimmerIndicatorGroup 확인)", fontSize = 12.sp)
                     }
                     if (simulateDelayedData) {
                         OutlinedButton(onClick = { simulateDelayedData = false }) {
@@ -166,13 +169,14 @@ fun FieldDiagnosticsWizardDemo() {
 internal fun buildDiagnosticsWizardJsonl(
     step: Int,
     delayHotspotData: Boolean,
-): Pair<List<String>, String?> {
+): Pair<List<String>, List<String>> {
+    // Uses v0_9_1 catalogId URI to demonstrate 1.0.0-SNAPSHOT's automatic CATALOG_ID_ALIASES mapping to v0_9
     val createMsg =
-        """{"version":"v0.9.1","createSurface":{"surfaceId":"diag_surface","catalogId":"${DroidKnightsCatalogs.BASIC_CATALOG_ID}","sendDataModel":true}}"""
+        """{"version":"v0.9.1","createSurface":{"surfaceId":"diag_surface","catalogId":"${DroidKnightsCatalogs.BASIC_CATALOG_ID_V0_9_1_ALIAS}","sendDataModel":true}}"""
 
     return when (step) {
         1 -> {
-            val compMsg =
+            val fullCompMsg =
                 """{"version":"v0.9.1","updateComponents":{"surfaceId":"diag_surface","components":[
                 {"id":"root","component":"Card","child":"col_step1"},
                 {"id":"col_step1","component":"Column","children":["txt_s1_title","hotspot_filter","vid_guide","chk_hose","btn_next1"]},
@@ -188,11 +192,27 @@ internal fun buildDiagnosticsWizardJsonl(
                 """{"version":"v0.9.1","updateDataModel":{"surfaceId":"diag_surface","path":"/","value":{"diag":{"partTitle":"드럼세탁기 전면 우측 하단 서비스 커버","hotspotLabel":"잔수 제거 호스 및 배수 펌프 거름망","hoseDrained":true}}}}"""
 
             if (delayHotspotData) {
+                // Initially omit `vid_guide` & `chk_hose` from updateComponents AND omit `/diag/partTitle` from DataModel
+                // so 3 consecutive items in `col_step1` render MaterialA2uiDefaults.LoadingIndicatorGroup's synchronized radial ShimmerIndicator!
+                val initialSkeletonCompMsg =
+                    """{"version":"v0.9.1","updateComponents":{"surfaceId":"diag_surface","components":[
+                    {"id":"root","component":"Card","child":"col_step1"},
+                    {"id":"col_step1","component":"Column","children":["txt_s1_title","hotspot_filter","vid_guide","chk_hose","btn_next1"]},
+                    {"id":"txt_s1_title","component":"Text","variant":"h3","text":"[1/3단계] 세탁기 OE(배수 불량) · 하단 배수 필터 위치 확인"},
+                    {"id":"hotspot_filter","component":"HotspotDiagramCard","title":{"path":"/diag/partTitle"},"hotspotLabel":{"path":"/diag/hotspotLabel"},"zoneCode":"PUMP-B2","status":"이물질 점검"},
+                    {"id":"btn_next1","component":"Button","variant":"primary","child":"btn_next1_txt","action":{"event":{"name":"advance_wizard_step","context":{"completedStep":1,"hoseDrained":{"path":"/diag/hoseDrained"}}}}} ,
+                    {"id":"btn_next1_txt","component":"Text","text":"1단계 완료 -> 2단계(펌프 임펠러 점검)로 진화"}
+                ]}}""".replace("\n", "")
+                val delayedRemainingCompMsg =
+                    """{"version":"v0.9.1","updateComponents":{"surfaceId":"diag_surface","components":[
+                    {"id":"vid_guide","component":"Video","url":"https://support.appliance.local/oe-drain-filter-60s.mp4"},
+                    {"id":"chk_hose","component":"CheckBox","label":"비상 배수 호스 마개를 열어 잔수를 먼저 제거했습니다","value":{"path":"/diag/hoseDrained"}}
+                ]}}""".replace("\n", "")
                 val emptyDataMsg =
                     """{"version":"v0.9.1","updateDataModel":{"surfaceId":"diag_surface","path":"/","value":{"diag":{"hoseDrained":true}}}}"""
-                listOf(createMsg, emptyDataMsg, compMsg) to fullDataMsg
+                listOf(createMsg, emptyDataMsg, initialSkeletonCompMsg) to listOf(fullDataMsg, delayedRemainingCompMsg)
             } else {
-                listOf(createMsg, fullDataMsg, compMsg) to null
+                listOf(createMsg, fullDataMsg, fullCompMsg) to emptyList()
             }
         }
         2 -> {
@@ -209,7 +229,7 @@ internal fun buildDiagnosticsWizardJsonl(
                 {"id":"btn_next2","component":"Button","variant":"primary","child":"btn_next2_txt","action":{"event":{"name":"advance_wizard_step","context":{"completedStep":2,"testResult":{"path":"/diag/testResult"}}}}},
                 {"id":"btn_next2_txt","component":"Text","text":"여전히 OE 발생 -> 3단계(출장 AS 예약) UI로 진화"}
             ]}}""".replace("\n", "")
-            listOf(createMsg, dataMsg, compMsg) to null
+            listOf(createMsg, dataMsg, compMsg) to emptyList()
         }
         else -> {
             val dataMsg =
@@ -224,7 +244,7 @@ internal fun buildDiagnosticsWizardJsonl(
                 {"id":"btn_book","component":"Button","variant":"primary","child":"btn_book_txt","action":{"event":{"name":"confirm_repair_dispatch","context":{"partCode":"AHA75673404 (Drain Pump)","visitDate":{"path":"/diag/visitDate"},"symptomNote":{"path":"/diag/symptomNote"}}}}},
                 {"id":"btn_book_txt","component":"Text","text":"배수펌프 부품 지참 출장 AS 확정"}
             ]}}""".replace("\n", "")
-            listOf(createMsg, dataMsg, compMsg) to null
+            listOf(createMsg, dataMsg, compMsg) to emptyList()
         }
     }
 }

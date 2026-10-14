@@ -171,7 +171,8 @@ class A2uiOfficialTestingSuiteTest {
     }
 
     /**
-     * Scenario 4: Verify progressive rendering (`isReady`) and delayed data/component arrival.
+     * Scenario 4: Verify progressive rendering (`isReady`), `LoadingIndicatorGroup` radial `ShimmerIndicator`,
+     * and delayed data/component arrival.
      */
     @Test
     fun scenario4_progressiveRenderingAndIsReadyGate() = runComposeUiTest {
@@ -183,13 +184,18 @@ class A2uiOfficialTestingSuiteTest {
                     listOf(
                         A2uiComponentPayload(
                             id = "root",
+                            type = "Column",
+                            properties = mapOf("children" to listOf("hotspot_card")),
+                        ),
+                        A2uiComponentPayload(
+                            id = "hotspot_card",
                             type = "HotspotDiagramCard",
                             properties =
                                 mapOf(
                                     "title" to mapOf("path" to "/diag/partTitle"),
                                     "hotspotLabel" to mapOf("path" to "/diag/hotspotLabel"),
                                 ),
-                        )
+                        ),
                     ),
             )
 
@@ -199,6 +205,9 @@ class A2uiOfficialTestingSuiteTest {
                 A2uiSurface(surfaceModel = surface)
             }
         }
+
+        // Before data arrives, HotspotDiagramCard.isReady() is false, so Column renders MaterialA2uiDefaults.LoadingIndicator (ShimmerIndicator)
+        onNodeWithTag("LoadingIndicator").assertIsDisplayed()
 
         // Now stream the missing data paths so HotspotDiagramCard.isReady() transitions from false -> true
         controller.updateData("/diag/partTitle", "드럼세탁기 전면 배수 필터")
