@@ -11,8 +11,10 @@ import androidx.a2ui.model.processor.processInput
 import androidx.a2ui.model.protocol.A2uiClientCapabilities
 import androidx.a2ui.model.protocol.A2uiClientErrorMessage
 import com.droidknights.a2ui.catalog.DroidKnightsCatalogs
+import com.droidknights.a2ui.common.A2uiSpec10Bridge
 import com.droidknights.a2ui.labs.buildCatalogComparisonJsonl
 import com.droidknights.a2ui.labs.buildInitialHealthySurfaceJsonl
+import com.droidknights.a2ui.labs.buildSpec10SampleJsonl
 import com.droidknights.a2ui.scenarios.buildCockpitJsonl
 import com.droidknights.a2ui.scenarios.buildDiagnosticsWizardJsonl
 import com.droidknights.a2ui.scenarios.buildIncidentJsonl
@@ -143,7 +145,7 @@ class A2uiPayloadsVerificationTest {
     @Test
     fun verifyDomainC_DynamicMashupSheet_allCases() {
         val catalog = DroidKnightsCatalogs.createStandardCatalog()
-        for (caseIdx in 0..2) {
+        for (caseIdx in 0..4) {
             verifyStreamHasZeroErrors(
                 streamName = "DynamicMashupSheet(case=$caseIdx)",
                 catalogs = listOf(catalog),
@@ -280,6 +282,62 @@ class A2uiPayloadsVerificationTest {
         assertTrue(
             "Expected sorted required properties where currentValue precedes metricName, got: $requiredArray",
             requiredArray.indexOf("\"currentValue\"") in 0 until requiredArray.indexOf("\"metricName\""),
+        )
+    }
+
+    @Test
+    fun verifyLab0_Spec10Bridge_desugaringAndExecution() {
+        val catalog = DroidKnightsCatalogs.createStandardCatalog()
+
+        // 1. Verify that pure Spec 1.0 JSONL directly fed to official v0.9.1 engine throws Unsupported protocol version
+        val rawSpec10Line = buildSpec10SampleJsonl(0).first()
+        var threwUnsupportedVersion = false
+        try {
+            createJvmParser().parse(rawSpec10Line)
+        } catch (e: Exception) {
+            threwUnsupportedVersion = e.message?.contains("Unsupported protocol version: v1.0") == true
+        }
+        assertTrue(
+            "Direct v1.0 parse must throw Unsupported protocol version in official v0.9.1 engine",
+            threwUnsupportedVersion,
+        )
+
+        // 2. Scenario 0: Test inline createSurface decomposition (1 Spec 1.0 message -> 3 AndroidX v0.9.1 messages)
+        val transformedBatch0 = A2uiSpec10Bridge.transform(rawSpec10Line)
+        assertEquals(
+            "Inline createSurface with dataModel and components should decompose into 3 v0.9.1 messages",
+            3,
+            transformedBatch0.size,
+        )
+        assertTrue("Message 1 must be createSurface", transformedBatch0[0].contains("\"createSurface\""))
+        assertTrue("Message 2 must be updateDataModel", transformedBatch0[1].contains("\"updateDataModel\""))
+        assertTrue("Message 3 must be updateComponents", transformedBatch0[2].contains("\"updateComponents\""))
+
+        // Verify version and catalog normalization
+        transformedBatch0.forEach { line ->
+            assertTrue("Transformed line must have version v0.9.1", line.contains("\"version\":\"v0.9.1\""))
+            assertTrue(
+                "Transformed line must not contain v1_0 catalog URI",
+                !line.contains(A2uiSpec10Bridge.SPEC_1_0_BASIC_CATALOG_ID),
+            )
+            assertTrue("Transformed line must not contain @path directive", !line.contains("\"@path\""))
+            assertTrue("Transformed line must not contain @call directive", !line.contains("\"@call\""))
+        }
+
+        // Verify 0 errors when processed by A2uiMessageProcessor
+        verifyStreamHasZeroErrors(
+            streamName = "Spec10Bridge_Scenario0_InlineDecomposition",
+            catalogs = listOf(catalog),
+            lines = transformedBatch0,
+        )
+
+        // 3. Scenario 1: Two-way binding (@path) & dynamic functions (@call) desugaring
+        val rawSpec10Scenario1 = buildSpec10SampleJsonl(1)
+        val transformedBatch1 = rawSpec10Scenario1.flatMap { A2uiSpec10Bridge.transform(it) }
+        verifyStreamHasZeroErrors(
+            streamName = "Spec10Bridge_Scenario1_PathAndCall",
+            catalogs = listOf(catalog),
+            lines = transformedBatch1,
         )
     }
 }

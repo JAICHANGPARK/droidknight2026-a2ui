@@ -131,7 +131,10 @@ fun FieldDiagnosticsWizardDemo() {
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     Button(
                         onClick = {
                             scope.launch {
@@ -140,7 +143,20 @@ fun FieldDiagnosticsWizardDemo() {
                             }
                         }
                     ) {
-                        Text("⏳ 1.8초 지연 스트리밍 재현 (신규 ShimmerIndicatorGroup 확인)", fontSize = 12.sp)
+                        Text("⏳ 1.8초 지연 스트리밍 재현 (ShimmerIndicatorGroup)", fontSize = 12.sp)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            scope.launch {
+                                val nextIdx = jsonlLines.count { it.contains("/diag/logs/-") } + 1
+                                val appendMsg =
+                                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"diag_surface","path":"/diag/logs/-","value":{"msg":"[실시간 센서 #$nextIdx] 배수 펌프 수위 센서 응답 확인 (정상)"}}}"""
+                                jsonlLines.add(appendMsg)
+                                processor.processInput(parser, appendMsg)
+                            }
+                        }
+                    ) {
+                        Text("➕ /diag/logs/- 배열 Append 스트리밍", color = Color.White, fontSize = 12.sp)
                     }
                     if (simulateDelayedData) {
                         OutlinedButton(onClick = { simulateDelayedData = false }) {
@@ -179,17 +195,19 @@ internal fun buildDiagnosticsWizardJsonl(
             val fullCompMsg =
                 """{"version":"v0.9.1","updateComponents":{"surfaceId":"diag_surface","components":[
                 {"id":"root","component":"Card","child":"col_step1"},
-                {"id":"col_step1","component":"Column","children":["txt_s1_title","hotspot_filter","vid_guide","chk_hose","btn_next1"]},
+                {"id":"col_step1","component":"Column","children":["txt_s1_title","hotspot_filter","vid_guide","chk_hose","list_logs","btn_next1"]},
                 {"id":"txt_s1_title","component":"Text","variant":"h3","text":"[1/3단계] 세탁기 OE(배수 불량) · 하단 배수 필터 위치 확인"},
                 {"id":"hotspot_filter","component":"HotspotDiagramCard","title":{"path":"/diag/partTitle"},"hotspotLabel":{"path":"/diag/hotspotLabel"},"zoneCode":"PUMP-B2","status":"이물질 점검"},
                 {"id":"vid_guide","component":"Video","url":"https://support.appliance.local/oe-drain-filter-60s.mp4"},
                 {"id":"chk_hose","component":"CheckBox","label":"비상 배수 호스 마개를 열어 잔수를 먼저 제거했습니다","value":{"path":"/diag/hoseDrained"}},
+                {"id":"list_logs","component":"List","children":{"path":"/diag/logs","componentId":"tpl_log_item"}},
+                {"id":"tpl_log_item","component":"Text","variant":"caption","text":{"path":"msg"}},
                 {"id":"btn_next1","component":"Button","variant":"primary","child":"btn_next1_txt","action":{"event":{"name":"advance_wizard_step","context":{"completedStep":1,"hoseDrained":{"path":"/diag/hoseDrained"}}}}} ,
                 {"id":"btn_next1_txt","component":"Text","text":"1단계 완료 -> 2단계(펌프 임펠러 점검)로 진화"}
             ]}}""".replace("\n", "")
 
             val fullDataMsg =
-                """{"version":"v0.9.1","updateDataModel":{"surfaceId":"diag_surface","path":"/","value":{"diag":{"partTitle":"드럼세탁기 전면 우측 하단 서비스 커버","hotspotLabel":"잔수 제거 호스 및 배수 펌프 거름망","hoseDrained":true}}}}"""
+                """{"version":"v0.9.1","updateDataModel":{"surfaceId":"diag_surface","path":"/","value":{"diag":{"partTitle":"드럼세탁기 전면 우측 하단 서비스 커버","hotspotLabel":"잔수 제거 호스 및 배수 펌프 거름망","hoseDrained":true,"logs":[{"msg":"[초기 진단] 에러코드 OE 감지 · 배수 펌프 거름망 점검 시작"}]}}}}"""
 
             if (delayHotspotData) {
                 // Initially omit `vid_guide` & `chk_hose` from updateComponents AND omit `/diag/partTitle` from DataModel
@@ -197,9 +215,11 @@ internal fun buildDiagnosticsWizardJsonl(
                 val initialSkeletonCompMsg =
                     """{"version":"v0.9.1","updateComponents":{"surfaceId":"diag_surface","components":[
                     {"id":"root","component":"Card","child":"col_step1"},
-                    {"id":"col_step1","component":"Column","children":["txt_s1_title","hotspot_filter","vid_guide","chk_hose","btn_next1"]},
+                    {"id":"col_step1","component":"Column","children":["txt_s1_title","hotspot_filter","vid_guide","chk_hose","list_logs","btn_next1"]},
                     {"id":"txt_s1_title","component":"Text","variant":"h3","text":"[1/3단계] 세탁기 OE(배수 불량) · 하단 배수 필터 위치 확인"},
                     {"id":"hotspot_filter","component":"HotspotDiagramCard","title":{"path":"/diag/partTitle"},"hotspotLabel":{"path":"/diag/hotspotLabel"},"zoneCode":"PUMP-B2","status":"이물질 점검"},
+                    {"id":"list_logs","component":"List","children":{"path":"/diag/logs","componentId":"tpl_log_item"}},
+                    {"id":"tpl_log_item","component":"Text","variant":"caption","text":{"path":"msg"}},
                     {"id":"btn_next1","component":"Button","variant":"primary","child":"btn_next1_txt","action":{"event":{"name":"advance_wizard_step","context":{"completedStep":1,"hoseDrained":{"path":"/diag/hoseDrained"}}}}} ,
                     {"id":"btn_next1_txt","component":"Text","text":"1단계 완료 -> 2단계(펌프 임펠러 점검)로 진화"}
                 ]}}""".replace("\n", "")
@@ -209,7 +229,7 @@ internal fun buildDiagnosticsWizardJsonl(
                     {"id":"chk_hose","component":"CheckBox","label":"비상 배수 호스 마개를 열어 잔수를 먼저 제거했습니다","value":{"path":"/diag/hoseDrained"}}
                 ]}}""".replace("\n", "")
                 val emptyDataMsg =
-                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"diag_surface","path":"/","value":{"diag":{"hoseDrained":true}}}}"""
+                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"diag_surface","path":"/","value":{"diag":{"hoseDrained":true,"logs":[{"msg":"[초기 진단] 지연 스트리밍 대기 중..."}]}}}}"""
                 listOf(createMsg, emptyDataMsg, initialSkeletonCompMsg) to listOf(fullDataMsg, delayedRemainingCompMsg)
             } else {
                 listOf(createMsg, fullDataMsg, fullCompMsg) to emptyList()

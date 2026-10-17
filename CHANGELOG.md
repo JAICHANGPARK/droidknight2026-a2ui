@@ -4,6 +4,44 @@
 
 ---
 
+## [2026-10-14] A2UI Spec 1.0 차세대 브릿지 (`A2uiSpec10Bridge`) 및 Lab 0 쇼케이스 추가
+
+A2UI 오픈소스 표준 사양(Spec 1.0 Candidate)과 구글 공식 `androidx.a2ui` (v0.9.1 엔진) 간의 버전 차이를 완벽히 가교하는 클라이언트 어댑터 아키텍처를 도입했습니다.
+
+### 1. 배경 및 문제 정의
+- **오픈소스 프로토콜 (A2UI Spec 1.0 Candidate)**:
+  - `"version": "v1.0"` 선언, 예약어 접두사(`@path`, `@call`), 단일 패킷 인라인 `createSurface { components, dataModel }`, 다중 카탈로그 믹싱 등 간결하고 강력한 표준 사양 제시.
+- **공식 안드로이드 라이브러리 (`androidx.a2ui:1.0.0-SNAPSHOT` / `alpha01`)**:
+  - 현재 내부 파서(`A2uiJsonMessageParser`)가 `SUPPORTED_VERSIONS = listOf("v0.9", "v0.9.1")`를 엄격히 강제하여, `"version": "v1.0"` 메시지 수신 시 `Unsupported protocol version: v1.0` 예외 발생.
+- **설계적 선택 (DroidKaigi 독자 렌더러 vs 공식 AndroidX Bridge)**:
+  - 커뮤니티 일부(예: DroidKaigi 등)는 `androidx.a2ui`를 배제하고 독자 렌더러(`:a2ui-renderer`)를 직접 구현하기도 하였으나, 이는 구글 공식 아티팩트(`material3-a2ui` 등)의 머티리얼3 통합, 결정론적 테스트 러너, 액션 인터셉터 등 풍부한 생태계를 잃는 트레이드오프가 존재함.
+  - 본 프로젝트는 DroidKnights 2026 발표의 핵심 가치인 **"공식 AndroidX A2UI 실전 가이드"**를 유지하기 위해, 공식 라이브러리를 100% 활용하면서도 최신 Spec 1.0 에이전트와 완벽히 통신할 수 있는 클라이언트 디슈가링 어댑터(`A2uiSpec10Bridge`)를 구축함.
+
+### 2. `A2uiSpec10Bridge` 핵심 기능
+- **파일**: `app/src/main/java/com/droidknights/a2ui/common/A2uiSpec10Bridge.kt`
+  - **버전 정규화**: `"version": "v1.0"`을 AndroidX 엔진이 수용하는 `"v0.9.1"`로 투명하게 변환.
+  - **카탈로그 URI 별칭 매핑**: `https://a2ui.org/specification/v1_0/catalogs/basic/catalog.json` -> 공식 기본 카탈로그 `A2uiBasicCatalogV1.CatalogId` (`.../v0_9/...`)로 자동 매핑.
+  - **지시자 디슈가링**: Spec 1.0 표준 예약어(`"@path"` -> `"path"`, `"@call"` -> `"call"`, `"@@..."` -> `"@..."`) 변환.
+  - **인라인 `createSurface` 분해(Decomposition)**: Spec 1.0의 단일 패킷 `createSurface { components, dataModel }`을 AndroidX 라이프사이클에 맞추어 3단계 순차 메시지(`createSurface` -> `updateDataModel` -> `updateComponents`)로 자동 분해.
+  - **미래 호환성**: 향후 구글이 `androidx.a2ui`에 Spec 1.0을 네이티브 탑재하면, 에이전트나 UI 수정 없이 브릿지 어댑터만 바이패스하면 되는 영속적 구조.
+
+### 3. Lab 0 인터랙티브 쇼케이스 화면
+- **파일**: `app/src/main/java/com/droidknights/a2ui/labs/Spec10BridgeLabScreen.kt`, `app/src/main/java/com/droidknights/a2ui/MainActivity.kt`
+  - 메인 탭에 `"🚀 Lab 0. Spec 1.0 차세대 브릿지"` 추가.
+  - **와이어 페이로드 실시간 비교 뷰**:
+    - ① 에이전트가 송신한 순수 A2UI Spec 1.0 원본 JSONL (인라인 createSurface, `@path`, `@call`)
+    - ② 브릿지가 디슈가링하여 AndroidX 엔진으로 주입한 v0.9.1 메시지 시퀀스를 듀얼 콘솔로 확인 가능.
+  - 주문 확정 및 스마트 플러그 전력 제어 시나리오의 실시간 양방향 바인딩 시연.
+
+### 4. 무결성 검증 단위 테스트 추가
+- **파일**: `app/src/test/java/com/droidknights/a2ui/A2uiPayloadsVerificationTest.kt`
+  - `verifyLab0_Spec10Bridge_desugaringAndExecution`:
+    - 순수 Spec 1.0 수신 시 공식 엔진의 거부(Unsupported protocol version) 재현.
+    - 인라인 생성 메시지가 3개의 유효한 v0.9.1 메시지로 정확히 분해되는지 검증.
+    - `A2uiMessageProcessor` 파이프라인에서 오류(0 errors) 없이 활성 서피스를 생성하는지 자동 검증.
+
+---
+
 ## [2026-10-14] AOSP `androidx-main` (`1.0.0-SNAPSHOT`) 최신 스펙 및 기능 반영 (`0a48f0e`)
 
 Google Maven에 배포된 `1.0.0-alpha01` (2026-09-16 브랜치 컷) 이후 약 3주간 AOSP `androidx-main` (`github.com/androidx/androidx`)에 머지된 후속 패치들을 샘플 코드와 테스트에 반영했습니다.
@@ -44,6 +82,14 @@ Google Maven에 배포된 `1.0.0-alpha01` (2026-09-16 브랜치 컷) 이후 약 
 - **변경 파일**:
   - `app/src/test/java/com/droidknights/a2ui/A2uiPayloadsVerificationTest.kt`:
     - `verifySnapshotNewFeatures_aliasAndListBoundsAndSortedSchema` 단위 테스트를 추가하여 ① `v0.9.1` 카탈로그 ID alias 해석, ② `minItems > maxItems` 예외 발생, ③ `toJsonSchemaString()`의 `required` 배열 정렬을 JVM 단위 테스트에서 자동 검증.
+
+### 5. `materialA2uiBasicCatalogV1` 함수 계약 리팩토링 (`A2uiBasicCatalogV1.Functions`)
+- **배경 (AOSP 최신 스냅샷)**:
+  - 기존 3개로 분산되었던 `urlOpener`, `messageFormatter`, `localeProvider` 파라미터가 단일 함수 계약 인터페이스인 `A2uiBasicCatalogV1.Functions`로 통합됨.
+  - `A2uiBasicCatalogV1.Functions`는 `openUrl` 외에 `required`, `regex`, `length`, `numeric`, `email`, `formatString`, `formatNumber`, `formatCurrency`, `formatDate`, `pluralize` 등 표준 내장 함수들에 대한 완벽한 기본(default) 구현체를 제공하여 구현 보일러플레이트를 대폭 절감.
+- **변경 파일**:
+  - `app/src/main/java/com/droidknights/a2ui/catalog/DroidKnightsCatalogs.kt`:
+    - `materialA2uiBasicCatalogV1` 호출부를 `functions = createBasicFunctions(...)`로 마이그레이션하여 JVM 단위 테스트 및 안드로이드 런타임 양측에서 100% 무결성 확보.
 
 ---
 

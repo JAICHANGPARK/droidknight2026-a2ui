@@ -1,6 +1,4 @@
 package com.droidknights.a2ui.catalog
-
-import android.icu.text.MessageFormat
 import androidx.a2ui.compose.runtime.A2uiComponentProperties
 import androidx.a2ui.compose.runtime.A2uiComponentScope
 import androidx.a2ui.compose.runtime.A2uiComponentState
@@ -9,10 +7,8 @@ import androidx.a2ui.compose.runtime.ProvideActionInterceptor
 import androidx.a2ui.compose.ui.A2uiCatalog
 import androidx.a2ui.compose.ui.A2uiComponent
 import androidx.a2ui.compose.ui.catalog.A2uiBasicCatalogV1
-import androidx.a2ui.model.catalog.functions.A2uiLocaleProvider
-import androidx.a2ui.model.catalog.functions.A2uiMessageFormatter
-import androidx.a2ui.model.catalog.functions.A2uiUrlOpener
 import androidx.a2ui.model.protocol.A2uiException
+import androidx.a2ui.model.protocol.A2uiExecutionContext
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -273,15 +269,12 @@ object DroidKnightsCatalogs {
             }
         }
 
-    private val defaultMessageFormatter = A2uiMessageFormatter { pattern, locale, args ->
-        try {
-            MessageFormat(pattern, locale).format(args)
-        } catch (_: Exception) {
-            pattern
+    private fun createBasicFunctions(onOpenUrl: (String) -> Unit): A2uiBasicCatalogV1.Functions =
+        object : A2uiBasicCatalogV1.Functions {
+            override fun openUrl(url: String, executionContext: A2uiExecutionContext) {
+                onOpenUrl(url)
+            }
         }
-    }
-
-    private val defaultLocaleProvider = A2uiLocaleProvider { Locale.KOREA }
 
     /**
      * 1. Standard Material 3 Catalog + 4 Reusable Custom Domain Primitives.
@@ -296,9 +289,7 @@ object DroidKnightsCatalogs {
                 image = MaterialA2uiBasicCatalogV1Defaults.image(defaultImageRenderer),
                 video = MaterialA2uiBasicCatalogV1Defaults.video(defaultVideoRenderer),
                 audioPlayer = MaterialA2uiBasicCatalogV1Defaults.audioPlayer(defaultAudioRenderer),
-                urlOpener = A2uiUrlOpener { url -> onOpenUrl(url) },
-                messageFormatter = defaultMessageFormatter,
-                localeProvider = defaultLocaleProvider,
+                functions = createBasicFunctions(onOpenUrl),
             )
 
         return A2uiCatalog(
@@ -331,9 +322,7 @@ object DroidKnightsCatalogs {
                 image = MaterialA2uiBasicCatalogV1Defaults.image(defaultImageRenderer),
                 video = MaterialA2uiBasicCatalogV1Defaults.video(defaultVideoRenderer),
                 audioPlayer = MaterialA2uiBasicCatalogV1Defaults.audioPlayer(defaultAudioRenderer),
-                urlOpener = A2uiUrlOpener { url -> onOpenUrl(url) },
-                messageFormatter = defaultMessageFormatter,
-                localeProvider = defaultLocaleProvider,
+                functions = createBasicFunctions(onOpenUrl),
                 card = BrandSquircleCardComponent,
                 button = BrandGradientButtonComponent,
                 text = BrandTypographyTextComponent,
@@ -369,9 +358,7 @@ object DroidKnightsCatalogs {
                 image = MaterialA2uiBasicCatalogV1Defaults.image(defaultImageRenderer),
                 video = MaterialA2uiBasicCatalogV1Defaults.video(defaultVideoRenderer),
                 audioPlayer = MaterialA2uiBasicCatalogV1Defaults.audioPlayer(defaultAudioRenderer),
-                urlOpener = A2uiUrlOpener { url -> onOpenUrl(url) },
-                messageFormatter = defaultMessageFormatter,
-                localeProvider = defaultLocaleProvider,
+                functions = createBasicFunctions(onOpenUrl),
                 card = SeniorHighContrastCardComponent,
                 button = SeniorVoiceGuidedButtonComponent,
                 text = SeniorLargeTextComponent,
@@ -403,9 +390,7 @@ object DroidKnightsCatalogs {
                 image = MaterialA2uiBasicCatalogV1Defaults.image(defaultImageRenderer),
                 video = MaterialA2uiBasicCatalogV1Defaults.video(defaultVideoRenderer),
                 audioPlayer = MaterialA2uiBasicCatalogV1Defaults.audioPlayer(defaultAudioRenderer),
-                urlOpener = A2uiUrlOpener {},
-                messageFormatter = defaultMessageFormatter,
-                localeProvider = defaultLocaleProvider,
+                functions = createBasicFunctions {},
             )
         val v1 =
             A2uiCatalog(

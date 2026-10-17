@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.droidknights.a2ui.labs.CatalogEvolutionLabScreen
 import com.droidknights.a2ui.labs.ChaosMonkeySelfHealingLabScreen
+import com.droidknights.a2ui.labs.Spec10BridgeLabScreen
 import com.droidknights.a2ui.labs.TestingShowcaseLabScreen
 import com.droidknights.a2ui.scenarios.ContextualCockpitDemo
 import com.droidknights.a2ui.scenarios.DynamicMashupSheetDemo
@@ -73,6 +74,7 @@ fun DroidKnightsA2uiApp() {
             "🚗 B. 스마트홈·SDV 콕핏",
             "🧾 C. 차등 정산·가변 클레임",
             "🔧 D. 가전 진단 위저드 (isReady)",
+            "🚀 Lab 0. Spec 1.0 차세대 브릿지",
             "🎨 Lab 1. 3-Way 카탈로그·협상",
             "🐒 Lab 2. 카오스 몽키·자가치유",
             "🧪 Lab 5. 결정론적 UI 테스트",
@@ -115,7 +117,7 @@ fun DroidKnightsA2uiApp() {
                             border = BorderStroke(1.dp, Color(0xFF38BDF8)),
                         ) {
                             Text(
-                                text = "Maven 1.0.0-alpha01",
+                                text = "Maven 1.0.0-SNAPSHOT",
                                 color = Color(0xFF38BDF8),
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
@@ -170,8 +172,9 @@ fun DroidKnightsA2uiApp() {
                     1 -> ContextualCockpitDemo()
                     2 -> DynamicMashupSheetDemo()
                     3 -> FieldDiagnosticsWizardDemo()
-                    4 -> CatalogEvolutionLabScreen()
-                    5 -> ChaosMonkeySelfHealingLabScreen()
+                    4 -> Spec10BridgeLabScreen()
+                    5 -> CatalogEvolutionLabScreen()
+                    6 -> ChaosMonkeySelfHealingLabScreen()
                     else -> TestingShowcaseLabScreen()
                 }
             }
