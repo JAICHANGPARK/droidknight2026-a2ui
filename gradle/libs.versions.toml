@@ -1,11 +1,13 @@
 [versions]
-androidGradlePlugin = "9.3.2"
+androidGradlePlugin = "9.4.1"
 androidxCore = "1.19.0"
 androidxLifecycle = "2.11.0"
 androidxActivity = "1.13.0"
 androidxComposeBom = "2026.08.00"
 compose = "1.13.0-alpha03"
 composeMaterial3 = "1.5.0-alpha28"
+navigation3 = "1.2.0"
+adaptive = "1.3.0"
 # Tracks the latest AOSP `androidx-main` snapshot via https://androidx.dev
 # (Switch back to "1.0.0-alpha01" or "1.0.0-alpha02" to use a fixed Google Maven release)
 a2ui = "1.0.0-SNAPSHOT"
@@ -31,6 +33,14 @@ androidx-a2ui-compose-ui = { module = "androidx.a2ui.compose:compose-ui", versio
 androidx-compose-material3-a2ui = { module = "androidx.compose.material3:material3-a2ui", version.ref = "a2ui" }
 # Layer 5: Deterministic UI Testing (A2uiTestController, A2uiComponentStub, A2uiTestSurface)
 androidx-a2ui-compose-ui-testing = { module = "androidx.a2ui.compose:compose-ui-testing", version.ref = "a2ui" }
+
+# Jetpack Navigation 3 & Material 3 Adaptive
+androidx-navigation3-runtime = { module = "androidx.navigation3:navigation3-runtime", version.ref = "navigation3" }
+androidx-navigation3-ui = { module = "androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
+androidx-compose-material3-adaptive = { module = "androidx.compose.material3.adaptive:adaptive", version.ref = "adaptive" }
+androidx-compose-material3-adaptive-layout = { module = "androidx.compose.material3.adaptive:adaptive-layout", version.ref = "adaptive" }
+androidx-compose-material3-adaptive-navigation = { module = "androidx.compose.material3.adaptive:adaptive-navigation", version.ref = "adaptive" }
+androidx-compose-material3-adaptive-navigation3 = { module = "androidx.compose.material3.adaptive:adaptive-navigation3", version.ref = "adaptive" }
 
 # Core Android & Compose dependencies
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }

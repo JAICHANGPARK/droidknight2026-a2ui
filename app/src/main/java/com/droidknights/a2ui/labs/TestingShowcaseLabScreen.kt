@@ -1,15 +1,17 @@
 package com.droidknights.a2ui.labs
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -17,18 +19,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/**
- * Official Docs Feature #5 (`testing`):
- * Interactive guide and code inspector for the 5 deterministic UI test patterns implemented in
- * `src/androidTest/java/com/droidknights/a2ui/A2uiOfficialTestingSuiteTest.kt` using
- * `androidx.a2ui.compose:compose-ui-testing:1.0.0-alpha01`.
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TestingShowcaseLabScreen() {
@@ -37,11 +32,10 @@ fun TestingShowcaseLabScreen() {
     val testCases =
         listOf(
             TestPatternInfo(
-                title = "① 컴포넌트 격리 & A2uiComponentStub (withId / withType)",
+                shortLabel = "1. 컴포넌트 스텁",
+                title = "컴포넌트 격리 & A2uiComponentStub",
                 docSection = "Isolate components with stubs",
-                summary =
-                    "복잡한 자식 트리나 네트워크 이미지를 실제 렌더링하지 않고 A2uiComponentStub.withId(\"child\") 또는 " +
-                        "A2uiComponentStub.withType(\"Image\")로 대체하여 부모 컨테이너만 결정론적으로 검증합니다.",
+                summary = "A2uiComponentStub.withType(\"Image\")로 자식 컴포넌트를 대체해 부모 컨테이너만 결정론적으로 검증합니다.",
                 codeSnippet =
                     """
                     val imageStub = A2uiComponentStub.withType("Image") { props, modifier ->
@@ -61,11 +55,10 @@ fun TestingShowcaseLabScreen() {
                     """.trimIndent(),
             ),
             TestPatternInfo(
-                title = "② 단방향·양방향 데이터 바인딩 검증 (updateData & getData)",
+                shortLabel = "2. 양방향 바인딩",
+                title = "데이터 바인딩 검증 (updateData & getData)",
                 docSection = "Test reactive data bindings",
-                summary =
-                    "LLM 서버 없이 controller.updateData(\"/nursery/targetTemp\", 25.0)로 에이전트 데이터 스트리밍을 재현하고, " +
-                        "사용자 UI 조작이 controller.getData(\"/nursery/targetTemp\")에 양방향 반영되는지 즉시 단언합니다.",
+                summary = "LLM 없이 controller.updateData()와 controller.getData()로 양방향 상태 동기화를 검증합니다.",
                 codeSnippet =
                     """
                     val controller = A2uiTestController(
@@ -86,16 +79,14 @@ fun TestingShowcaseLabScreen() {
                     setContent { A2uiTestSurface(surface = surface) }
                     onNodeWithText("+ 0.5°C").performClick()
                     controller.waitForIdle()
-                    val updated: Double? = controller.getData("/nursery/targetTemp")
-                    assertThat(updated).isEqualTo(22.5)
+                    assertThat(controller.getData<Double>("/nursery/targetTemp")).isEqualTo(22.5)
                     """.trimIndent(),
             ),
             TestPatternInfo(
-                title = "③ 아웃바운드 액션 & 인터셉터 체인 검증 (dispatchedActions / outboundEvents)",
+                shortLabel = "3. 아웃바운드 액션",
+                title = "아웃바운드 이벤트 검증 (dispatchedActions)",
                 docSection = "Verify user actions and outbound events",
-                summary =
-                    "버튼 클릭 시 dispatchAction()이 호출되어 controller.dispatchedActions와 controller.outboundEvents에 " +
-                        "정확한 이벤트 이름과 컨텍스트가 기록되는지 검증합니다.",
+                summary = "버튼 클릭 시 controller.dispatchedActions와 outboundEvents에 기록된 이벤트를 검증합니다.",
                 codeSnippet =
                     """
                     onNodeWithTag("submit_button").performClick()
@@ -108,35 +99,31 @@ fun TestingShowcaseLabScreen() {
                     """.trimIndent(),
             ),
             TestPatternInfo(
-                title = "④ 프로그레시브 로딩(isReady) & 지연 자식 도착 시뮬레이션",
+                shortLabel = "4. 프로그레시브 로딩",
+                title = "프로그레시브 로딩 (isReady) 시뮬레이션",
                 docSection = "Test progressive rendering and loading states",
-                summary =
-                    "초기에 자식 컴포넌트나 필수 데이터 경로를 비워두어 Loading 상태(쉬머 스켈레톤)를 검증한 뒤, " +
-                        "controller.updateData() / controller.updateComponent() 호출 후 Success 상태로 전환되는지 테스트합니다.",
+                summary = "필수 데이터 도착 전 Loading 스켈레톤과 updateData() 이후 본문 전환을 테스트합니다.",
                 codeSnippet =
                     """
-                    // 1. 초기에는 /diag/partTitle 데이터가 없으므로 HotspotDiagramCard.isReady() == false
                     val surface = controller.start()
                     setContent { A2uiSurface(surfaceModel = surface) }
 
-                    // 2. 에이전트가 뒤늦게 데이터를 푸시하면 isReady() == true가 되어 즉시 본문 노출
-                    controller.updateData("/diag/partTitle", "드럼세탁기 하단 배수 필터")
+                    controller.updateData("/diag/partTitle", "하단 배수 필터")
                     controller.updateData("/diag/hotspotLabel", "잔수 제거 호스")
                     controller.waitForIdle()
-                    onNodeWithText("드럼세탁기 하단 배수 필터").assertIsDisplayed()
+                    onNodeWithText("하단 배수 필터").assertIsDisplayed()
                     """.trimIndent(),
             ),
             TestPatternInfo(
-                title = "⑤ 에러 주입(failComponent) & 스키마 위반 아웃바운드 에러 단언",
+                shortLabel = "5. 에러 주입",
+                title = "에러 주입 (failComponent) & 에러 리포팅",
                 docSection = "Simulate errors and validate error reporting",
-                summary =
-                    "controller.failComponent(\"root\", A2uiValidationException(...)) 또는 잘못된 프로퍼티(min > max)를 주입해 " +
-                        "UI 에러 폴백과 controller.outboundErrors에 기록된 에러 코드를 단언합니다.",
+                summary = "controller.failComponent() 호출 시 에러 경계 UI와 outboundErrors 기록을 단언합니다.",
                 codeSnippet =
                     """
                     controller.failComponent(
                         id = "root",
-                        exception = A2uiException.A2uiValidationException("Simulated schema error", "/components/0")
+                        exception = A2uiException.A2uiValidationException("Simulated error", "/components/0")
                     )
                     controller.waitForIdle()
                     assertThat(controller.outboundErrors).isNotEmpty()
@@ -146,86 +133,76 @@ fun TestingShowcaseLabScreen() {
 
     val current = testCases[selectedTest]
 
-    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = Color(0xFF1E293B),
-            border = BorderStroke(1.dp, Color(0xFF334155)),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text(
-                    text = "🧪 공식 기능 Lab 5 · LLM 없이 돌리는 결정론적 UI 테스트 (compose-ui-testing)",
-                    color = Color.White,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 16.sp,
-                )
-                Text(
-                    text =
-                        "androidx.a2ui.compose:compose-ui-testing:1.0.0-alpha01 아티팩트의 A2uiTestController, " +
-                            "A2uiComponentStub, A2uiTestSurface를 사용한 5가지 공식 테스트 시나리오가 " +
-                            "app/src/androidTest/.../A2uiOfficialTestingSuiteTest.kt에 실제 코드로 구현되어 있습니다.",
-                    color = Color(0xFFCBD5E1),
-                    fontSize = 12.sp,
-                )
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = "결정론적 UI 테스트 (compose-ui-testing)",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = "A2uiTestController와 A2uiComponentStub을 활용한 5가지 테스트 패턴입니다.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    testCases.forEachIndexed { idx, info ->
-                        FilterChip(
-                            selected = selectedTest == idx,
-                            onClick = { selectedTest = idx },
-                            label = { Text(info.title, fontSize = 12.sp) },
-                        )
-                    }
-                }
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            testCases.forEachIndexed { idx, info ->
+                FilterChip(
+                    selected = selectedTest == idx,
+                    onClick = { selectedTest = idx },
+                    label = { Text(info.shortLabel, style = MaterialTheme.typography.labelMedium) },
+                )
             }
         }
 
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = Color(0xFF0F172A),
-            border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+        Card(
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
                     text = current.title,
-                    color = Color(0xFF38BDF8),
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 15.sp,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "공식 문서 섹션: developer.android.com/develop/ui/compose/agentic/testing (${current.docSection})",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 11.sp,
+                    text = current.docSection,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
                     fontFamily = FontFamily.Monospace,
                 )
                 Text(
                     text = current.summary,
-                    color = Color.White,
-                    fontSize = 13.sp,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF020617),
-                    border = BorderStroke(1.dp, Color(0xFF1E293B)),
+                Card(
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        ),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
                         text = current.codeSnippet,
-                        color = Color(0xFFA7F3D0),
                         fontSize = 11.sp,
+                        lineHeight = 16.sp,
                         fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.padding(14.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier =
+                            Modifier.fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(12.dp),
                     )
                 }
             }
@@ -234,6 +211,7 @@ fun TestingShowcaseLabScreen() {
 }
 
 private data class TestPatternInfo(
+    val shortLabel: String,
     val title: String,
     val docSection: String,
     val summary: String,

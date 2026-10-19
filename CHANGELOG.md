@@ -4,6 +4,35 @@
 
 ---
 
+## [2026-10-19] AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16648379`) 최신 변경사항 반영
+
+최신 AOSP `androidx-main` 커밋(`0ef4ea1923e`, `f3ed67ecaa9`, `5098f93b2fc`)과 AOSP Gerrit 업스트림 변경사항(`4346347`, `4324646`)을 예제 앱 전 영역에 적용했습니다.
+
+### 1. `A2uiBasicCatalogV1.Functions(context)` 팩토리 위임 및 로케일/ICU 통합 (`f3ed67ecaa9`, `5098f93b2fc`)
+- **배경**:
+  - `A2uiBasicCatalogV1`의 함수 계약이 `A2uiBasicCatalogV1.Functions` 인터페이스로 일원화되었으며, 안드로이드 런타임에서는 `A2uiBasicCatalogV1.Functions(context, localeProvider)` 팩토리를 통해 `Intent.ACTION_VIEW` (`CATEGORY_BROWSABLE`, `FLAG_ACTIVITY_NEW_TASK`) 기반의 안전한 URL 오픈 및 `android.icu.text.MessageFormat` 기반 `pluralize`, `formatNumber`, `formatCurrency`, `formatDate` 기본 구현체를 생성하도록 변경됨.
+  - 개별 함수를 커스터마이즈할 때는 `object : A2uiBasicCatalogV1.Functions by A2uiBasicCatalogV1.Functions(context)` 코틀린 클래스 위임(Delegation) 패턴이 공식 권장됨.
+- **적용 내역**:
+  - `DefaultA2uiMediaRenderers.createBasicFunctions(context, localeProvider, onOpenUrl)`:
+    - 안드로이드 Compose 런타임(`context != null`)에서는 공식 `A2uiBasicCatalogV1.Functions(context, localeProvider)`에 위임(`by platformDefaults`)하고, JVM 단위 테스트(`context == null`)에서는 `A2uiBasicCatalogV1.Functions`의 타입 안전 기본 메서드를 사용하도록 이원화.
+  - `DroidKnightsCatalogs`, 5개 도메인 카탈로그(`CurrencyExchangeCatalog`, `IncidentCommanderCatalog`, `ContextualCockpitCatalog`, `DynamicMashupCatalog`, `FieldDiagnosticsCatalog`), 그리고 모든 데모/Lab 화면에서 `LocalContext.current`를 전달하도록 업데이트.
+
+### 2. `openUrl` RFC 3986 스킴 허용 목록(`http`, `https`, `mailto`, `tel`) 보안 검증 및 카오스 몽키 시연 (`CL 4346347`)
+- **배경**:
+  - 에이전트가 생성한 신뢰할 수 없는 URL이 임의의 인텐트나 스크립트 스킴(`javascript:`, `file:`, `intent:`)을 실행하지 못하도록 `http`, `https`, `mailto`, `tel` 4개 스킴만 허용하고 제어 문자나 비허용 스킴 수신 시 `A2uiRuntimeException`을 던져 에이전트로 에러를 보고하도록 강화됨.
+- **적용 내역**:
+  - `DefaultA2uiMediaRenderers.validateOpenUrlScheme(url)` 구현 및 `openUrl` 호출 시 자동 검증 적용.
+  - `ChaosMonkeySelfHealingLabScreen.kt`: **"4. 비허용 URL 스킴 차단 (`javascript:alert`)"** 카오스 테스트 버튼을 추가하여 비허용 URL 클릭 시 실행 차단 및 에러 리포팅을 실시간 시연.
+  - `A2uiPayloadsVerificationTest.kt`: `verifyLatestFunctionsContract_andOpenUrlSchemeSecurity` 단위 테스트 추가.
+
+### 3. Compose `@Preview` 전용 `A2uiPreviewParameterProvider` 및 `rememberA2uiPreviewSurface` 지원 (`CL 4324646`)
+- **배경**:
+  - 원시 A2UI JSONL 메시지 리스트만으로 Android Studio Compose `@Preview`에서 즉시 `A2uiSurfaceModel`을 렌더링할 수 있는 `A2uiPreviewParameterProvider` 및 `rememberA2uiPreviewSurface` 유틸리티가 도입됨.
+- **적용 내역**:
+  - `app/src/main/java/com/droidknights/a2ui/common/A2uiPreviewSupport.kt` 추가 및 환전/인시던트/카탈로그 V2 프리뷰 적용.
+
+---
+
 ## [2026-10-14] A2UI Spec 1.0 차세대 브릿지 (`A2uiSpec10Bridge`) 및 Lab 0 쇼케이스 추가
 
 A2UI 오픈소스 표준 사양(Spec 1.0 Candidate)과 구글 공식 `androidx.a2ui` (v0.9.1 엔진) 간의 버전 차이를 완벽히 가교하는 클라이언트 어댑터 아키텍처를 도입했습니다.

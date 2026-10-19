@@ -61,6 +61,14 @@ dependencies {
     implementation(libs.androidx.compose.material3.a2ui)
     androidTestImplementation(libs.androidx.a2ui.compose.ui.testing)
 
+    // Jetpack Navigation 3 & Material 3 Adaptive
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
+    implementation(libs.androidx.compose.material3.adaptive)
+    implementation(libs.androidx.compose.material3.adaptive.layout)
+    implementation(libs.androidx.compose.material3.adaptive.navigation)
+    implementation(libs.androidx.compose.material3.adaptive.navigation3)
+
     // Core Android & Lifecycle
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

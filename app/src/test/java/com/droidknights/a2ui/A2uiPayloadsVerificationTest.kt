@@ -118,8 +118,8 @@ class A2uiPayloadsVerificationTest {
 
     @Test
     fun verifyDomainA_IncidentCommander_allCasesAndModes() {
-        val catalog = DroidKnightsCatalogs.createStandardCatalog()
-        for (incidentIdx in 0..2) {
+        val catalog = com.droidknights.a2ui.catalog.domains.IncidentCommanderCatalog.create()
+        for (incidentIdx in 0..4) {
             for (readOnly in listOf(false, true)) {
                 verifyStreamHasZeroErrors(
                     streamName = "IncidentCommander(incident=$incidentIdx, readOnly=$readOnly)",
@@ -132,8 +132,8 @@ class A2uiPayloadsVerificationTest {
 
     @Test
     fun verifyDomainB_ContextualCockpit_allRoutines() {
-        val catalog = DroidKnightsCatalogs.createStandardCatalog()
-        for (routineIdx in 0..2) {
+        val catalog = com.droidknights.a2ui.catalog.domains.ContextualCockpitCatalog.create()
+        for (routineIdx in 0..4) {
             verifyStreamHasZeroErrors(
                 streamName = "ContextualCockpit(routine=$routineIdx)",
                 catalogs = listOf(catalog),
@@ -144,7 +144,7 @@ class A2uiPayloadsVerificationTest {
 
     @Test
     fun verifyDomainC_DynamicMashupSheet_allCases() {
-        val catalog = DroidKnightsCatalogs.createStandardCatalog()
+        val catalog = com.droidknights.a2ui.catalog.domains.DynamicMashupCatalog.create()
         for (caseIdx in 0..4) {
             verifyStreamHasZeroErrors(
                 streamName = "DynamicMashupSheet(case=$caseIdx)",
@@ -156,8 +156,8 @@ class A2uiPayloadsVerificationTest {
 
     @Test
     fun verifyDomainD_FieldDiagnosticsWizard_allSteps() {
-        val catalog = DroidKnightsCatalogs.createStandardCatalog()
-        for (step in 1..3) {
+        val catalog = com.droidknights.a2ui.catalog.domains.FieldDiagnosticsCatalog.create()
+        for (step in 1..5) {
             val (initialLines, delayedLines) = buildDiagnosticsWizardJsonl(step, delayHotspotData = false)
             val allLines = initialLines + delayedLines
             verifyStreamHasZeroErrors(
@@ -173,6 +173,76 @@ class A2uiPayloadsVerificationTest {
             catalogs = listOf(catalog),
             lines = delayedInit + delayedFollowup,
         )
+    }
+
+    @Test
+    fun verifyDomainCurrencyExchange_allCases() {
+        val catalog = com.droidknights.a2ui.catalog.domains.CurrencyExchangeCatalog.create()
+        for (caseIdx in 0..4) {
+            verifyStreamHasZeroErrors(
+                streamName = "CurrencyExchange(case=$caseIdx)",
+                catalogs = listOf(catalog),
+                lines = com.droidknights.a2ui.scenarios.buildCurrencyExchangeJsonl(caseIdx),
+            )
+        }
+    }
+
+    @Test
+    fun verifyAllDomains_FollowUpAndFinalActionLoops() {
+        val dummyEvent =
+            androidx.a2ui.model.protocol.A2uiClientEventMessage(
+                surfaceId = "exchange_surface",
+                componentId = "btn_submit",
+                timestamp = 1729140000000L,
+                type = "submit_exchange",
+                context =
+                    mapOf(
+                        "currency" to "JPY",
+                        "foreignAmount" to 50000,
+                        "krwAmount" to 452060,
+                        "branch" to listOf("ICN_T1"),
+                        "incidentId" to "INC-8821",
+                        "backupWeight" to 80,
+                        "targetTemp" to 23.5,
+                        "mashupType" to "JAPAN_TRIP_COMBO",
+                        "visitDate" to "2026-10-16T14:00:00Z",
+                    ),
+            )
+
+        // 1. Exchange Stage 1 -> Stage 2 -> Stage 3
+        val exchangeCatalog = com.droidknights.a2ui.catalog.domains.CurrencyExchangeCatalog.create()
+        val exchangeStage1 = com.droidknights.a2ui.scenarios.buildCurrencyExchangeJsonl(0)
+        val (_, exchangeStage2) = com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads.buildFollowUpVoucherStepJsonl(dummyEvent)
+        val (_, exchangeStage3) = com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads.buildFinalVoucherIssuedJsonl(dummyEvent)
+        verifyStreamHasZeroErrors("Exchange_3StageLoop", listOf(exchangeCatalog), exchangeStage1 + exchangeStage2 + exchangeStage3)
+
+        // 2. Incident Stage 1 -> Stage 2 -> Stage 3
+        val incCatalog = com.droidknights.a2ui.catalog.domains.IncidentCommanderCatalog.create()
+        val incStage1 = buildIncidentJsonl(0, false)
+        val (_, incStage2) = com.droidknights.a2ui.scenarios.payloads.IncidentCommanderPayloads.buildFollowUpVerificationJsonl(dummyEvent)
+        val (_, incStage3) = com.droidknights.a2ui.scenarios.payloads.IncidentCommanderPayloads.buildFinalResolvedJsonl(dummyEvent)
+        verifyStreamHasZeroErrors("Incident_3StageLoop", listOf(incCatalog), incStage1 + incStage2 + incStage3)
+
+        // 3. Cockpit Stage 1 -> Stage 2 -> Stage 3
+        val ckCatalog = com.droidknights.a2ui.catalog.domains.ContextualCockpitCatalog.create()
+        val ckStage1 = buildCockpitJsonl(0)
+        val (_, ckStage2) = com.droidknights.a2ui.scenarios.payloads.ContextualCockpitPayloads.buildFollowUpAutomationJsonl(dummyEvent)
+        val (_, ckStage3) = com.droidknights.a2ui.scenarios.payloads.ContextualCockpitPayloads.buildFinalCockpitDoneJsonl(dummyEvent)
+        verifyStreamHasZeroErrors("Cockpit_3StageLoop", listOf(ckCatalog), ckStage1 + ckStage2 + ckStage3)
+
+        // 4. Mashup Stage 1 -> Stage 2 -> Stage 3
+        val msCatalog = com.droidknights.a2ui.catalog.domains.DynamicMashupCatalog.create()
+        val msStage1 = buildMashupJsonl(0)
+        val (_, msStage2) = com.droidknights.a2ui.scenarios.payloads.DynamicMashupPayloads.buildFollowUpMashupStepJsonl(dummyEvent)
+        val (_, msStage3) = com.droidknights.a2ui.scenarios.payloads.DynamicMashupPayloads.buildFinalMashupDoneJsonl(dummyEvent)
+        verifyStreamHasZeroErrors("Mashup_3StageLoop", listOf(msCatalog), msStage1 + msStage2 + msStage3)
+
+        // 5. Diagnostics Stage 1 -> Stage 2 -> Stage 3
+        val dgCatalog = com.droidknights.a2ui.catalog.domains.FieldDiagnosticsCatalog.create()
+        val (dgStage1, _) = buildDiagnosticsWizardJsonl(3, false)
+        val (_, dgStage2) = com.droidknights.a2ui.scenarios.payloads.FieldDiagnosticsPayloads.buildFollowUpDiagnosticsStepJsonl(dummyEvent)
+        val (_, dgStage3) = com.droidknights.a2ui.scenarios.payloads.FieldDiagnosticsPayloads.buildFinalDiagnosticsDoneJsonl(dummyEvent)
+        verifyStreamHasZeroErrors("Diagnostics_3StageLoop", listOf(dgCatalog), dgStage1 + dgStage2 + dgStage3)
     }
 
     @Test
@@ -340,5 +410,74 @@ class A2uiPayloadsVerificationTest {
             lines = transformedBatch1,
         )
     }
+
+    /**
+     * Verifies the latest `A2uiBasicCatalogV1.Functions` typed contract (`f3ed67ecaa9`, `5098f93b2fc`)
+     * and the `openUrl` scheme security allowlist (`http`, `https`, `mailto`, `tel` — CL `4346347`).
+     */
+    @Test
+    fun verifyLatestFunctionsContract_andOpenUrlSchemeSecurity() {
+        val openedUrls = mutableListOf<String>()
+        val functions =
+            com.droidknights.a2ui.catalog.hooks.DefaultA2uiMediaRenderers.createBasicFunctions(
+                context = null,
+                onOpenUrl = { openedUrls.add(it) },
+            )
+
+        val dummyExecutionContext =
+            object : androidx.a2ui.model.protocol.A2uiExecutionContext {
+                override val dataPath: androidx.a2ui.model.protocol.A2uiDataPath =
+                    androidx.a2ui.model.protocol.A2uiDataPath("/")
+                override fun evaluatePayload(payload: Any?): Any? = payload
+                override fun executeFunction(name: String, args: Map<String, Any>): Any? = null
+                override fun resolveValue(path: androidx.a2ui.model.protocol.A2uiDataPath): Any? = null
+                override fun <T : Any> getOrCreateFunctionScopedCache(
+                    functionDefinition: androidx.a2ui.model.catalog.A2uiFunctionDefinition,
+                    factory: () -> T,
+                ): T = factory()
+            }
+
+        // 1. Allowed schemes (https, http, mailto, tel) succeed
+        listOf(
+            "https://developer.android.com/develop/ui/compose/agentic",
+            "http://example.com/status",
+            "mailto:oncall@droidknights.com",
+            "tel:+821012345678",
+        ).forEach { safeUrl ->
+            functions.openUrl(safeUrl, dummyExecutionContext)
+        }
+        assertEquals(4, openedUrls.size)
+
+        // 2. Disallowed schemes (javascript:, file:, intent:, empty, control chars) throw A2uiRuntimeException
+        listOf(
+            "",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "intent://scan/#Intent;scheme=zxing;end",
+            "https://example.com/\nmalicious",
+            "example.com/no-scheme",
+        ).forEach { unsafeUrl ->
+            var threwRuntimeException = false
+            try {
+                functions.openUrl(unsafeUrl, dummyExecutionContext)
+            } catch (_: androidx.a2ui.model.protocol.A2uiException.A2uiRuntimeException) {
+                threwRuntimeException = true
+            }
+            assertTrue(
+                "Expected A2uiRuntimeException for unsafe URL: '$unsafeUrl'",
+                threwRuntimeException,
+            )
+        }
+        assertEquals("Unsafe URLs must not reach onOpenUrl", 4, openedUrls.size)
+
+        // 3. Verify typed default methods on A2uiBasicCatalogV1.Functions (5098f93b2fc / f3ed67ecaa9)
+        assertTrue(functions.required("non-empty", dummyExecutionContext))
+        assertTrue(!functions.required("", dummyExecutionContext))
+        assertTrue(functions.length("DroidKnights", min = 5, max = 20, executionContext = dummyExecutionContext))
+        assertTrue(functions.numeric(42.0, min = 0.0, max = 100.0, executionContext = dummyExecutionContext))
+        assertTrue(functions.email("dev@droidknights.com", dummyExecutionContext))
+        assertTrue(functions.regex("INC-8821", "^INC-[0-9]{4}$", dummyExecutionContext))
+    }
 }
+
 
