@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -31,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
@@ -59,8 +60,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.droidknights.a2ui.BuildConfig
 import com.droidknights.a2ui.navigation.rememberA2uiWindowLayoutInfo
 
 data class AgentPromptPreset(
@@ -264,6 +268,130 @@ private fun flattenContextMap(
         }
     }
 
+/**
+ * Dialog for configuring the Gemini API Key (`local.properties` or runtime override),
+ * model name (`gemini-2.5-flash` / `gemini-2.5-pro`), and toggling Gemini API vs Offline Preset mode.
+ */
+@Composable
+fun GeminiApiSettingsDialog(
+    initialApiKey: String,
+    initialModel: String,
+    initialEnabled: Boolean,
+    hasBuildConfigKey: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (apiKey: String, model: String, enabled: Boolean) -> Unit,
+) {
+    var apiKeyInput by rememberSaveable { mutableStateOf(initialApiKey) }
+    var modelInput by rememberSaveable { mutableStateOf(initialModel.ifBlank { "gemini-2.5-flash" }) }
+    var enabledInput by rememberSaveable { mutableStateOf(initialEnabled) }
+    var showRawKey by rememberSaveable { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "🔑 Gemini API 연동 설정",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text =
+                        if (hasBuildConfigKey) {
+                            "✅ local.properties(GEMINI_API_KEY)에 설정된 키가 감지되었습니다. 아래에서 덮어쓰거나 그대로 사용할 수 있습니다."
+                        } else {
+                            "local.properties에 GEMINI_API_KEY=... 를 추가하거나 아래 입력창에 Gemini API 키를 입력하세요. 네트워크 오류 시 오프라인 프리셋으로 자동 폴백됩니다."
+                        },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Gemini API 호출 사용",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "비활성화 시 오프라인 프리셋 스트리밍으로 동작",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = enabledInput,
+                        onCheckedChange = { enabledInput = it },
+                    )
+                }
+
+                OutlinedTextField(
+                    value = apiKeyInput,
+                    onValueChange = { apiKeyInput = it },
+                    label = { Text("Gemini API Key (AIza...)") },
+                    placeholder = {
+                        Text(
+                            if (hasBuildConfigKey) "local.properties 기본 키 사용 중"
+                            else "AIzaSy..."
+                        )
+                    },
+                    singleLine = true,
+                    visualTransformation =
+                        if (showRawKey) VisualTransformation.None
+                        else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        TextButton(onClick = { showRawKey = !showRawKey }) {
+                            Text(
+                                if (showRawKey) "숨김" else "보기",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = modelInput,
+                    onValueChange = { modelInput = it },
+                    label = { Text("Gemini 모델명") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("gemini-2.5-flash", "gemini-2.5-pro").forEach { presetModel ->
+                        FilterChip(
+                            selected = modelInput == presetModel,
+                            onClick = { modelInput = presetModel },
+                            label = { Text(presetModel, style = MaterialTheme.typography.labelSmall) },
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(apiKeyInput.trim(), modelInput.trim(), enabledInput)
+                }
+            ) {
+                Text("저장 및 적용")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("취소")
+            }
+        },
+    )
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun A2uiAgentChatScaffold(
@@ -277,9 +405,11 @@ fun A2uiAgentChatScaffold(
     jsonlStream: List<String>,
     onClearOutbound: () -> Unit,
     agentActionReplies: List<String> = emptyList(),
+    agentIntroOverride: String? = null,
     streamingStatusText: String? = null,
     isStreaming: Boolean = false,
     expectedJsonlCount: Int = 3,
+    onUserSendPrompt: ((String) -> Unit)? = null,
     extraHeaderControls: (@Composable () -> Unit)? = null,
     extraTimelineBanners: (@Composable () -> Unit)? = null,
     legacyAsIsContent: (@Composable () -> Unit)? = null,
@@ -314,11 +444,17 @@ fun A2uiAgentChatScaffold(
         customInputText = ""
         chatTurnCounter += 1
         val resolvedIdx = targetIdx ?: matchOfflinePromptIndex(finalPrompt, prompts)
-        if (resolvedIdx != null && resolvedIdx != selectedPromptIndex) {
-            onSelectPrompt(resolvedIdx)
+        if (onUserSendPrompt != null) {
+            if (resolvedIdx != null && resolvedIdx != selectedPromptIndex) {
+                onSelectPrompt(resolvedIdx)
+            }
+            onUserSendPrompt(finalPrompt)
         } else {
-            // Re-trigger streaming on the current prompt
-            onClearOutbound()
+            if (resolvedIdx != null && resolvedIdx != selectedPromptIndex) {
+                onSelectPrompt(resolvedIdx)
+            } else {
+                onClearOutbound()
+            }
         }
     }
 
@@ -390,7 +526,7 @@ fun A2uiAgentChatScaffold(
                     ) {
                         AssistChip(
                             onClick = { onClearOutbound() },
-                            label = { Text("🔄 스트리밍 재실행", style = MaterialTheme.typography.labelSmall) },
+                            label = { Text("🔄 다시 실행", style = MaterialTheme.typography.labelSmall) },
                         )
                         FilterChip(
                             selected = showTelemetryDrawer,
@@ -409,7 +545,7 @@ fun A2uiAgentChatScaffold(
                     }
                 }
 
-                // Mode Switcher Row + Optional Extra Header Controls
+                // Mode Switcher Row + Optional Extra Header Controls (e.g. Gemini API Settings Chip)
                 Row(
                     modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -431,7 +567,7 @@ fun A2uiAgentChatScaffold(
 
         HorizontalDivider()
 
-        // 2. Collapsible Top/Bottom Telemetry Drawer when toggled from Top Bar
+        // 2. Collapsible Top Telemetry Drawer when toggled from Top Bar
         AnimatedVisibility(
             visible = showTelemetryDrawer,
             enter = expandVertically() + fadeIn(),
@@ -509,7 +645,7 @@ fun A2uiAgentChatScaffold(
 
                     // Turn 2: Agent's response bubble + Progressive Streaming Status Bar
                     ChatBubble(
-                        text = activePreset.agentIntroText,
+                        text = agentIntroOverride ?: activePreset.agentIntroText,
                         fromUser = false,
                         senderLabel = "AI 에이전트 · ${activePreset.schemaBadge}",
                     )
