@@ -259,4 +259,25 @@ class A2uiOfficialTestingSuiteTest {
         assertTrue(controller.outboundErrors.isNotEmpty())
         assertEquals("VALIDATION_FAILED", controller.outboundErrors.first().code)
     }
+
+    /**
+     * Scenario 6: Verify official `androidx.a2ui.compose:compose-ui-tooling-preview` (`98b3d9f6fc0`)
+     * `A2uiPreviewParameterProvider`, `A2uiSurfaceModelFactory`, and `rememberA2uiPreviewSurface`.
+     */
+    @Test
+    fun scenario6_previewParameterProviderAndRememberPreviewSurface() = runComposeUiTest {
+        val provider = com.droidknights.a2ui.common.DroidKnightsA2uiSurfacePreviewProvider()
+        val factories = provider.values.toList()
+        assertEquals(6, factories.size)
+        assertEquals("1. Currency Exchange", provider.getDisplayName(0))
+
+        setContent {
+            MaterialTheme {
+                A2uiSurface(surfaceModel = factories[0].create())
+            }
+        }
+
+        waitForIdle()
+        onNodeWithText("환전 신청 (JPY · 일본 엔)").assertIsDisplayed()
+    }
 }

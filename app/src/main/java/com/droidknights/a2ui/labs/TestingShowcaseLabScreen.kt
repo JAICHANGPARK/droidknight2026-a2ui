@@ -1,5 +1,6 @@
 package com.droidknights.a2ui.labs
 
+import androidx.a2ui.compose.ui.tooling.preview.rememberA2uiPreviewSurface
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,21 +14,26 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.a2ui.A2uiSurface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.droidknights.a2ui.catalog.DroidKnightsCatalogs
+import com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TestingShowcaseLabScreen() {
     var selectedTest by remember { mutableIntStateOf(0) }
+    val context = LocalContext.current
 
     val testCases =
         listOf(
@@ -129,18 +135,47 @@ fun TestingShowcaseLabScreen() {
                     assertThat(controller.outboundErrors).isNotEmpty()
                     """.trimIndent(),
             ),
+            TestPatternInfo(
+                shortLabel = "6. @Preview 툴링",
+                title = "Compose @Preview 툴링 (compose-ui-tooling-preview)",
+                docSection = "A2uiPreviewParameterProvider & rememberA2uiPreviewSurface (98b3d9f6fc0)",
+                summary = "신규 공식 모듈(androidx.a2ui.compose:compose-ui-tooling-preview)을 사용해 원시 JSONL 메시지 리스트만으로 Android Studio @Preview 및 UI 테스트에서 즉시 A2uiSurfaceModel을 생성합니다.",
+                codeSnippet =
+                    """
+                    class DroidKnightsA2uiSurfacePreviewProvider :
+                        A2uiPreviewParameterProvider(
+                            catalogProvider = {
+                                val context = LocalContext.current
+                                remember(context) { DroidKnightsCatalogs.createStandardCatalog(context = context) }
+                            },
+                            namedJsonMessages = mapOf(
+                                "1. Currency Exchange" to CurrencyExchangePayloads.buildJsonl(0),
+                                "2. Incident Commander" to IncidentCommanderPayloads.buildJsonl(0, false),
+                            ),
+                        )
+
+                    @Preview(showBackground = true, widthDp = 412)
+                    @Composable
+                    fun DroidKnightsA2uiSurfacePreview(
+                        @PreviewParameter(DroidKnightsA2uiSurfacePreviewProvider::class)
+                        surfaceFactory: A2uiSurfaceModelFactory,
+                    ) {
+                        A2uiSurface(surfaceModel = surfaceFactory.create())
+                    }
+                    """.trimIndent(),
+            ),
         )
 
     val current = testCases[selectedTest]
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = "결정론적 UI 테스트 (compose-ui-testing)",
+            text = "결정론적 UI 테스트 & @Preview 툴링",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            text = "A2uiTestController와 A2uiComponentStub을 활용한 5가지 테스트 패턴입니다.",
+            text = "compose-ui-testing (A2uiTestController) 및 신규 공식 모듈 compose-ui-tooling-preview (A2uiPreviewParameterProvider) 패턴입니다.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -204,6 +239,37 @@ fun TestingShowcaseLabScreen() {
                                 .horizontalScroll(rememberScrollState())
                                 .padding(12.dp),
                     )
+                }
+
+                if (selectedTest == 5) {
+                    val previewCatalog =
+                        remember(context) { DroidKnightsCatalogs.createStandardCatalog(context = context) }
+                    val previewSurfaceModel =
+                        rememberA2uiPreviewSurface(
+                            catalog = previewCatalog,
+                            jsonMessages = remember { CurrencyExchangePayloads.buildJsonl(0) },
+                        )
+                    Text(
+                        text = "실시간 rememberA2uiPreviewSurface() 렌더링 결과",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    Card(
+                        colors =
+                            CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            ),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            A2uiSurface(
+                                surfaceModel = previewSurfaceModel,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -22,7 +22,7 @@ media3 = "1.11.0"
 kotlin = "2.4.10"
 
 [libraries]
-# Official AndroidX A2UI artifacts (1.0.0-SNAPSHOT from androidx.dev / 1.0.0-alpha01 on Google Maven)
+# Official AndroidX A2UI artifacts (1.0.0-SNAPSHOT from androidx.dev / 1.0.0-alpha02 on Google Maven)
 # Layer 1: Pure Kotlin protocol & processor models (0 Compose imports)
 androidx-a2ui-model = { module = "androidx.a2ui:a2ui-model", version.ref = "a2ui" }
 # Layer 2: Compose Snapshot-backed state & property bindings
@@ -33,6 +33,8 @@ androidx-a2ui-compose-ui = { module = "androidx.a2ui.compose:compose-ui", versio
 androidx-compose-material3-a2ui = { module = "androidx.compose.material3:material3-a2ui", version.ref = "a2ui" }
 # Layer 5: Deterministic UI Testing (A2uiTestController, A2uiComponentStub, A2uiTestSurface)
 androidx-a2ui-compose-ui-testing = { module = "androidx.a2ui.compose:compose-ui-testing", version.ref = "a2ui" }
+# Layer 6: Compose @Preview Tooling (A2uiPreviewParameterProvider, A2uiSurfaceModelFactory, rememberA2uiPreviewSurface)
+androidx-a2ui-compose-ui-tooling-preview = { module = "androidx.a2ui.compose:compose-ui-tooling-preview", version.ref = "a2ui" }
 
 # Jetpack Navigation 3 & Material 3 Adaptive
 androidx-navigation3-runtime = { module = "androidx.navigation3:navigation3-runtime", version.ref = "navigation3" }

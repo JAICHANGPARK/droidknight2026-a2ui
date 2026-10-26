@@ -39,15 +39,21 @@ interface BidirectionalExchangeInputSchema : A2uiComponent {
             )
 
     @Composable
+    override fun A2uiComponentScope.isReady(properties: A2uiComponentProperties): Boolean {
+        return properties[currencyCodeProperty] != null &&
+            properties.bind(foreignAmountProperty) != null
+    }
+
+    @Composable
     override fun A2uiComponentScope.Content(
         properties: A2uiComponentProperties,
         modifier: Modifier,
     ) {
-        val currencyCode = properties[currencyCodeProperty] ?: "JPY"
+        val currencyCode = properties[currencyCodeProperty] ?: return
         val currencyLabel = properties[currencyLabelProperty] ?: "환전할 외화"
         val exchangeRate = (properties[exchangeRateProperty] ?: 904.12).toDouble()
         val unitScale = (properties[unitScaleProperty] ?: 100.0).toDouble()
-        val foreignAmount = properties.bind(foreignAmountProperty)?.toLong() ?: 50000L
+        val foreignAmount = properties.bind(foreignAmountProperty)?.toLong() ?: return
         val krwAmount = properties.bind(krwAmountProperty)?.toLong()
         val foreignUpdater = properties.bindUpdater(foreignAmountProperty)
         val krwUpdater = properties.bindUpdater(krwAmountProperty)
@@ -56,7 +62,8 @@ interface BidirectionalExchangeInputSchema : A2uiComponent {
             SideEffect(exchangeRate, unitScale) {
                 reportError(
                     A2uiException.A2uiRuntimeException(
-                        "BidirectionalExchangeInput exchangeRate ($exchangeRate) and unitScale ($unitScale) must be positive"
+                        "BidirectionalExchangeInput exchangeRate ($exchangeRate) and unitScale ($unitScale) must be positive",
+                        mapOf("path" to exchangeRateProperty.key),
                     )
                 )
             }

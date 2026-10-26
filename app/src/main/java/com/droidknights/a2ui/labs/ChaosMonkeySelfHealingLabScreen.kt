@@ -188,6 +188,21 @@ fun ChaosMonkeySelfHealingLabScreen() {
             ) {
                 Text("4. 비허용 URL 스킴 차단", style = MaterialTheme.typography.labelMedium)
             }
+
+            FilledTonalButton(
+                onClick = {
+                    scope.launch {
+                        val dupChoicePicker =
+                            """{"version":"v0.9.1","updateComponents":{"surfaceId":"chaos_surface","components":[
+                                {"id":"slot_widget","component":"ChoicePicker","label":"중복 옵션 ChoicePicker","variant":"mutuallyExclusive","options":[{"label":"서울 리전","value":"SEL"},{"label":"중복 서울 리전","value":"SEL"}],"value":{"path":"/chaos/region"}}
+                            ]}}""".replace("\n", "")
+                        jsonlLines.add(dupChoicePicker)
+                        processor.processInput(parser, dupChoicePicker)
+                    }
+                },
+            ) {
+                Text("5. 중복 옵션 에러 주입", style = MaterialTheme.typography.labelMedium)
+            }
         }
 
         activeSurfaces.forEach { surface ->
@@ -232,7 +247,7 @@ internal fun buildInitialHealthySurfaceJsonl(): List<String> {
     val createMsg =
         """{"version":"v0.9.1","createSurface":{"surfaceId":"chaos_surface","catalogId":"${DroidKnightsCatalogs.BASIC_CATALOG_ID}","sendDataModel":true}}"""
     val dataMsg =
-        """{"version":"v0.9.1","updateDataModel":{"surfaceId":"chaos_surface","path":"/","value":{"chaos":{"sliderVal":40},"sparseItems":{"999999":"대기 중"}}}}"""
+        """{"version":"v0.9.1","updateDataModel":{"surfaceId":"chaos_surface","path":"/","value":{"chaos":{"sliderVal":40,"region":["SEL"]},"sparseItems":{"999999":"대기 중"}}}}"""
     val compMsg =
         """{"version":"v0.9.1","updateComponents":{"surfaceId":"chaos_surface","components":[
             {"id":"root","component":"Card","child":"col_chaos"},

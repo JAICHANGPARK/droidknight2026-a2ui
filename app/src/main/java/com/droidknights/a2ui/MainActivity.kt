@@ -160,9 +160,7 @@ fun DroidKnightsA2uiApp(
                     modifier =
                         Modifier.weight(1f)
                             .fillMaxHeight()
-                            .imePadding()
-                            .verticalScroll(rememberScrollState())
-                            .padding(16.dp),
+                            .imePadding(),
                 ) {
                     NavDisplay(
                         backStack = topLevelBackStack.backStack,
@@ -196,16 +194,44 @@ fun DroidKnightsA2uiApp(
                                     FieldDiagnosticsWizardDemo()
                                 }
                                 entry<A2uiTopLevelRoute.Spec10BridgeLab> {
-                                    Spec10BridgeLabScreen()
+                                    Column(
+                                        modifier =
+                                            Modifier.fillMaxSize()
+                                                .verticalScroll(rememberScrollState())
+                                                .padding(16.dp),
+                                    ) {
+                                        Spec10BridgeLabScreen()
+                                    }
                                 }
                                 entry<A2uiTopLevelRoute.CatalogEvolutionLab> {
-                                    CatalogEvolutionLabScreen()
+                                    Column(
+                                        modifier =
+                                            Modifier.fillMaxSize()
+                                                .verticalScroll(rememberScrollState())
+                                                .padding(16.dp),
+                                    ) {
+                                        CatalogEvolutionLabScreen()
+                                    }
                                 }
                                 entry<A2uiTopLevelRoute.ChaosMonkeyLab> {
-                                    ChaosMonkeySelfHealingLabScreen()
+                                    Column(
+                                        modifier =
+                                            Modifier.fillMaxSize()
+                                                .verticalScroll(rememberScrollState())
+                                                .padding(16.dp),
+                                    ) {
+                                        ChaosMonkeySelfHealingLabScreen()
+                                    }
                                 }
                                 entry<A2uiTopLevelRoute.TestingShowcaseLab> {
-                                    TestingShowcaseLabScreen()
+                                    Column(
+                                        modifier =
+                                            Modifier.fillMaxSize()
+                                                .verticalScroll(rememberScrollState())
+                                                .padding(16.dp),
+                                    ) {
+                                        TestingShowcaseLabScreen()
+                                    }
                                 }
                             },
                     )

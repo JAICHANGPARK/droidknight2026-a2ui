@@ -26,12 +26,17 @@ interface ActionGuardContainerSchema : A2uiComponent {
         get() = listOf(childProperty, guardedActionNameProperty, guardTitleProperty)
 
     @Composable
+    override fun A2uiComponentScope.isReady(properties: A2uiComponentProperties): Boolean {
+        return properties[childProperty] != null && properties[guardedActionNameProperty] != null
+    }
+
+    @Composable
     override fun A2uiComponentScope.Content(
         properties: A2uiComponentProperties,
         modifier: Modifier,
     ) {
         val childId = properties[childProperty] ?: return
-        val guardedName = properties[guardedActionNameProperty].orEmpty()
+        val guardedName = properties[guardedActionNameProperty] ?: return
         val guardTitle =
             properties.bind(guardTitleProperty) ?: "로컬 보안 가드레일 (ProvideActionInterceptor)"
 

@@ -178,21 +178,21 @@ object DefaultA2uiMediaRenderers {
         }
 
     /**
-     * Schemes the A2UI Basic Catalog V1 specification allows `openUrl` to open (`http`, `https`),
-     * plus `mailto` and `tel` accepted by the official reference web & AndroidX renderers.
+     * Schemes the A2UI basic catalog implementation guide allows `openUrl` to open (`https`, `http`,
+     * `mailto`, `tel`).
      */
     private val ALLOWED_URL_SCHEMES: Set<String> = setOf("https", "http", "mailto", "tel")
 
-    /** RFC 3986 scheme syntax. */
-    private val SCHEME_REGEX = Regex("[A-Za-z][A-Za-z0-9+.-]*")
-
     /**
-     * Validates [url] against the A2UI Basic Catalog V1 `openUrl` security contract:
+     * Validates [url] against the A2UI Basic Catalog V1 `openUrl` security contract
+     * (`A2uiOpenUrlFunction.typedExecute`, AOSP CL `4346347`):
      * - Must be non-empty
-     * - Must have a valid RFC 3986 scheme in [ALLOWED_URL_SCHEMES] (`http`, `https`, `mailto`, `tel`)
      * - Must not contain ISO control characters (`\n`, `\t`, `\u0000`)
+     * - Must have a non-empty scheme before the first `:`
+     * - Scheme (case-insensitive) must be in [ALLOWED_URL_SCHEMES] (`https`, `http`, `mailto`, `tel`)
      *
-     * @throws A2uiException.A2uiRuntimeException if [url] is malformed or uses a disallowed scheme
+     * @throws androidx.a2ui.model.protocol.A2uiException.A2uiRuntimeException if [url] is empty,
+     *   contains control characters, has no scheme, or uses an unsupported scheme
      */
     fun validateOpenUrlScheme(url: String) {
         if (url.isEmpty()) {
@@ -200,14 +200,23 @@ object DefaultA2uiMediaRenderers {
                 "Function openUrl was invoked with an empty URL"
             )
         }
-        val scheme = url.substringBefore(':', missingDelimiterValue = "")
-        if (
-            !SCHEME_REGEX.matches(scheme) ||
-                scheme.lowercase() !in ALLOWED_URL_SCHEMES ||
-                url.any { it.isISOControl() }
-        ) {
+        if (url.any { it.isISOControl() }) {
             throw androidx.a2ui.model.protocol.A2uiException.A2uiRuntimeException(
-                "Function openUrl was invoked with a malformed URL or an unsupported scheme"
+                "Function openUrl was invoked with a URL with control characters"
+            )
+        }
+        // The scheme is the text before the first ':'. A value with no scheme (a relative path or
+        // a bare host) is rejected: there is no base URL to resolve it against.
+        val scheme = url.substringBefore(':', missingDelimiterValue = "")
+        if (scheme.isEmpty()) {
+            throw androidx.a2ui.model.protocol.A2uiException.A2uiRuntimeException(
+                "Function openUrl was invoked with a URL that has no scheme"
+            )
+        }
+        if (scheme.lowercase() !in ALLOWED_URL_SCHEMES) {
+            throw androidx.a2ui.model.protocol.A2uiException.A2uiRuntimeException(
+                "Function openUrl was invoked with the unsupported URL scheme " +
+                    "'$scheme'. Allowed schemes: ${ALLOWED_URL_SCHEMES.joinToString()}"
             )
         }
     }

@@ -38,13 +38,18 @@ interface CircularClimateDialSchema : A2uiComponent {
             )
 
     @Composable
+    override fun A2uiComponentScope.isReady(properties: A2uiComponentProperties): Boolean {
+        return properties.bind(labelProperty) != null && properties.bind(valueProperty) != null
+    }
+
+    @Composable
     override fun A2uiComponentScope.Content(
         properties: A2uiComponentProperties,
         modifier: Modifier,
     ) {
-        val label = properties.bind(labelProperty) ?: "Dial"
+        val label = properties.bind(labelProperty) ?: return
         val unit = properties[unitProperty] ?: "°C"
-        val rawValue = properties.bind(valueProperty)?.toFloat() ?: 22f
+        val rawValue = properties.bind(valueProperty)?.toFloat() ?: return
         val min = (properties[minProperty] ?: 16.0).toFloat()
         val max = (properties[maxProperty] ?: 30.0).toFloat()
         val step = (properties[stepProperty] ?: 0.5).toFloat()
@@ -54,7 +59,8 @@ interface CircularClimateDialSchema : A2uiComponent {
             SideEffect(min, max) {
                 reportError(
                     A2uiException.A2uiRuntimeException(
-                        "CircularClimateDial min ($min) must be strictly less than max ($max)"
+                        "CircularClimateDial min ($min) must be strictly less than max ($max)",
+                        mapOf("path" to minProperty.key),
                     )
                 )
             }

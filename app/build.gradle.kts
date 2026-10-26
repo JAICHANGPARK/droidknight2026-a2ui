@@ -50,7 +50,7 @@ dependencies {
     androidTestImplementation(composeBom)
 
     // -------------------------------------------------------------------------
-    // Official AndroidX A2UI Artifacts from Google Maven (1.0.0-alpha01)
+    // Official AndroidX A2UI Artifacts (1.0.0-SNAPSHOT / 1.0.0-alpha02 on Google Maven)
     // Notice: `androidx.a2ui:a2ui-engine` is intentionally NOT added here;
     // it is an internal dependency of `compose-runtime` so `A2uiCore*` types
     // never pollute the app's public classpath (see `/agentic/api-naming`).
@@ -58,6 +58,7 @@ dependencies {
     implementation(libs.androidx.a2ui.model)
     implementation(libs.androidx.a2ui.compose.runtime)
     implementation(libs.androidx.a2ui.compose.ui)
+    implementation(libs.androidx.a2ui.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3.a2ui)
     androidTestImplementation(libs.androidx.a2ui.compose.ui.testing)
 

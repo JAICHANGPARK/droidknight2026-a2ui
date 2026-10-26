@@ -28,13 +28,20 @@ interface PowerBudgetBarSchema : A2uiComponent {
         get() = listOf(titleProperty, usedProperty, maxProperty, detailProperty)
 
     @Composable
+    override fun A2uiComponentScope.isReady(properties: A2uiComponentProperties): Boolean {
+        return properties.bind(titleProperty) != null &&
+            properties.bind(usedProperty) != null &&
+            properties.bind(maxProperty) != null
+    }
+
+    @Composable
     override fun A2uiComponentScope.Content(
         properties: A2uiComponentProperties,
         modifier: Modifier,
     ) {
-        val title = properties.bind(titleProperty) ?: "Power Budget"
-        val used = properties.bind(usedProperty)?.toFloat() ?: 0f
-        val max = (properties.bind(maxProperty)?.toFloat() ?: 10f).coerceAtLeast(0.1f)
+        val title = properties.bind(titleProperty) ?: return
+        val used = properties.bind(usedProperty)?.toFloat() ?: return
+        val max = (properties.bind(maxProperty)?.toFloat() ?: return).coerceAtLeast(0.1f)
         val detail = properties.bind(detailProperty)
         val isOverload = used > max
 
@@ -42,7 +49,8 @@ interface PowerBudgetBarSchema : A2uiComponent {
             SideEffect(used, max) {
                 reportError(
                     A2uiException.A2uiRuntimeException(
-                        "PowerBudgetBar overload: usedKw ($used) exceeds maxKw ($max)"
+                        "PowerBudgetBar overload: usedKw ($used) exceeds maxKw ($max)",
+                        mapOf("path" to usedProperty.key),
                     )
                 )
             }

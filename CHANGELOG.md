@@ -4,6 +4,58 @@
 
 ---
 
+## [2026-10-26] AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16723761`) & AGP `9.4.1` 최신 변경사항 반영
+
+Android Gradle Plugin(AGP) `9.4.1` 업그레이드 및 AOSP `androidx-main` / Gerrit 최신 변경사항(`CL 4390685`, `CL 4389525`–`4389533`)을 커스텀 컴포넌트 스키마, 카오스 몽키 Lab, 테스트 스위트에 반영했습니다.
+
+### 1. `A2uiComponent` Total `Content` 및 `isReady` 게이트 계약 정렬 (`CL 4389525`, `CL 4390685`)
+- **배경**:
+  - Material 3 컨테이너(`A2uiSurface`)가 자식 슬롯을 `AnimatedContent`로 감싸기 때문에, 바인딩된 데이터가 삭제되거나 타입이 변경되어 `isReady`가 `false`로 전환되는 퇴장 애니메이션(exit transition) 프레임 동안에도 `Content`가 재컴포즈될 수 있음.
+  - 따라서 모든 `A2uiComponent`는 `isReady(properties)`에서 필수 프로퍼티(`properties[prop]` / `properties.bind(prop)`)를 검사하고, `Content` 내부에서도 `checkNotNull`이나 임의 기본값 대신 조기 반환(`?: return`)을 사용하여 **Total `Content` 함수 계약**을 보장해야 함.
+- **적용 내역**:
+  - `CircularClimateDialSchema.kt`, `PowerBudgetBarSchema.kt`, `MetricSparklineSchema.kt`, `BidirectionalExchangeInputSchema.kt`, `ActionGuardContainerSchema.kt`, `HotspotDiagramCardSchema.kt` 등 6개 커스텀 스키마 전수에 `isReady(properties)` 오버라이드 및 `Content` 내 `?: return` 조기 반환 패턴 적용.
+
+### 2. `A2uiProperty.nested` / `A2uiProperty.nestedList` 인라인 중첩 객체 스키마 도입 (`CL 4390685`)
+- **배경**:
+  - API Council 피드백을 반영한 `CL 4390685`에서 `A2uiProperty.nested`(단일 인라인 JSON 객체를 하위 `A2uiComponentProperties`로 해석) 및 `A2uiProperty.nestedList`(인라인 JSON 객체 배열을 `List<A2uiComponentProperties>`로 해석) 공식 샘플 및 계약이 정립됨.
+- **적용 내역**:
+  - `MetricSparklineSchema.kt`에 `thresholdProperty = A2uiProperty.nested("threshold", ...)` 및 `annotationsProperty = A2uiProperty.nestedList("annotations", ...)`를 추가하여 중첩 객체/배열 스키마 직렬화 및 런타임 검증을 시연.
+  - `A2uiPayloadsVerificationTest.kt`에서 `threshold`와 `annotations`를 포함한 `MetricSparkline` 페이로드 파싱 및 스키마 검증 테스트 추가.
+
+### 3. `A2uiRuntimeException` 프로퍼티 경로 귀속(`mapOf("path" to property.key)`) 및 중복 옵션 검증 시연 (`CL 4389527`, `CL 4389530`)
+- **배경**:
+  - 컴포넌트나 함수에서 런타임 검증 실패(`min > max`, `ChoicePicker` 중복 옵션 값 등)를 `reportError`로 보고할 때 `A2uiRuntimeException(message, mapOf("path" to property.key))` 형태로 실패한 프로퍼티 키를 함께 전달하여 에이전트가 정확한 필드를 자가 교정할 수 있도록 개선됨.
+- **적용 내역**:
+  - `CircularClimateDialSchema.kt`, `PowerBudgetBarSchema.kt`, `BidirectionalExchangeInputSchema.kt`의 `A2uiRuntimeException` 생성 시 `mapOf("path" to ...)` 상세 컨텍스트 추가.
+  - `ChaosMonkeySelfHealingLabScreen.kt`에 **"5. 중복 옵션 에러 주입"** 버튼을 추가하여 `ChoicePicker`에 중복 `value`(`"SEL"`) 주입 시 런타임 에러 보고 및 1.4초 자동 자가치유 패치 루프를 시연.
+
+### 4. Android Gradle Plugin (AGP) `9.3.2` → `9.4.1` 업그레이드
+- `gradle/libs.versions.toml`의 `agp` 버전을 `9.4.1`로 업데이트.
+
+---
+
+## [2026-10-23] AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16704143` / Google Maven `1.0.0-alpha02`) 최신 변경사항 반영
+
+Google Maven `1.0.0-alpha02` 정식 출시(`CL 4366174`) 및 AOSP `androidx-main` 최신 머지 커밋(`98b3d9f6fc0` / `CL 4324646`), 그리고 `openUrl` 보안 검증 최신 패치셋(`CL 4346347`)을 예제 앱과 테스트 스위트에 반영했습니다.
+
+### 1. 신규 공식 모듈 `androidx.a2ui.compose:compose-ui-tooling-preview` 정식 연동 (`98b3d9f6fc0` / `CL 4324646`)
+- **배경**:
+  - AOSP `androidx-main`에 신규 공식 모듈 `a2ui:compose:compose-ui-tooling-preview` (`androidx.a2ui.compose:compose-ui-tooling-preview:1.0.0-SNAPSHOT`)가 정식 머지 및 배포됨.
+  - 최종 머지된 공식 API에서는 `A2uiSurfaceModelFactory` (`fun interface { @Composable fun create(): A2uiSurfaceModel }`)가 도입되어, `A2uiPreviewParameterProvider`가 `PreviewParameterProvider<A2uiSurfaceModelFactory>`를 구현하고 `@Composable () -> A2uiCatalog` (`catalogProvider`) 생성자를 지원함. 이를 통해 `@Preview` 컴포지션 내부에서 `LocalContext.current`와 `remember`를 안전하게 사용하여 카탈로그와 서피스를 초기화할 수 있음.
+- **적용 내역**:
+  - `gradle/libs.versions.toml` 및 `app/build.gradle.kts`: 6번째 공식 A2UI 아티팩트 `androidx.a2ui.compose:compose-ui-tooling-preview` 의존성 추가.
+  - `app/src/main/java/com/droidknights/a2ui/common/A2uiPreviewSupport.kt`: 기존 로컬 Shim 구현을 제거하고 공식 `androidx.a2ui.compose.ui.tooling.preview.A2uiPreviewParameterProvider`, `A2uiSurfaceModelFactory`, `rememberA2uiPreviewSurface`를 직접 임포트하여 `catalogProvider = { ... }` 및 `surfaceFactory.create()` 패턴으로 전환.
+  - `app/src/main/java/com/droidknights/a2ui/labs/TestingShowcaseLabScreen.kt`: **"6. @Preview 툴링"** 탭을 추가하고 화면 하단에서 `rememberA2uiPreviewSurface` 실시간 렌더링 결과를 바로 확인할 수 있도록 구성.
+  - `app/src/androidTest/java/com/droidknights/a2ui/A2uiOfficialTestingSuiteTest.kt`: `scenario6_previewParameterProviderAndRememberPreviewSurface` 계측 테스트 추가.
+
+### 2. `openUrl` 세분화된 예외 메시지 계약 동기화 (`CL 4346347` 최신 리비전)
+- **배경**:
+  - `A2uiOpenUrlFunction.typedExecute(url)`의 최신 패치셋(`CL 4346347`)에서 빈 URL(`empty URL`), 제어 문자 포함(`control characters`), 스킴 누락(`no scheme`), 미지원 스킴(`unsupported URL scheme '<scheme>'. Allowed schemes: https, http, mailto, tel`) 케이스별로 명확히 구분된 `A2uiRuntimeException` 메시지를 던지도록 정교화됨.
+- **적용 내역**:
+  - `DefaultA2uiMediaRenderers.validateOpenUrlScheme(url)` 및 `A2uiPayloadsVerificationTest.verifyLatestFunctionsContract_andOpenUrlSchemeSecurity` 단위 테스트를 최신 예외 메시지 규격에 맞추어 업데이트.
+
+---
+
 ## [2026-10-19] AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16648379`) 최신 변경사항 반영
 
 최신 AOSP `androidx-main` 커밋(`0ef4ea1923e`, `f3ed67ecaa9`, `5098f93b2fc`)과 AOSP Gerrit 업스트림 변경사항(`4346347`, `4324646`)을 예제 앱 전 영역에 적용했습니다.

@@ -25,15 +25,28 @@ interface MetricSparklineSchema : A2uiComponent {
 
     override val properties: List<A2uiProperty<*>>
         get() =
-            listOf(metricNameProperty, currentValueProperty, severityProperty, pointsProperty)
+            listOf(
+                metricNameProperty,
+                currentValueProperty,
+                severityProperty,
+                pointsProperty,
+                thresholdProperty,
+                annotationsProperty,
+            )
+
+    @Composable
+    override fun A2uiComponentScope.isReady(properties: A2uiComponentProperties): Boolean {
+        return properties.bind(metricNameProperty) != null &&
+            properties.bind(currentValueProperty) != null
+    }
 
     @Composable
     override fun A2uiComponentScope.Content(
         properties: A2uiComponentProperties,
         modifier: Modifier,
     ) {
-        val metricName = properties.bind(metricNameProperty) ?: "Latency"
-        val currentValue = properties.bind(currentValueProperty) ?: "0ms"
+        val metricName = properties.bind(metricNameProperty) ?: return
+        val currentValue = properties.bind(currentValueProperty) ?: return
         val severity = properties.bind(severityProperty) ?: "normal"
         val rawPoints = properties[pointsProperty]
         val points =
@@ -76,6 +89,29 @@ interface MetricSparklineSchema : A2uiComponent {
                 maxItems = 24,
                 description =
                     "Normalized sparkline points (0.0..1.0) with minItems/maxItems schema bounds",
+            )
+        val thresholdWarnProperty =
+            A2uiProperty.number("warn", required = false, description = "Warning threshold")
+        val thresholdCritProperty =
+            A2uiProperty.number("critical", required = false, description = "Critical threshold")
+        val thresholdProperty =
+            A2uiProperty.nested(
+                key = "threshold",
+                properties = listOf(thresholdWarnProperty, thresholdCritProperty),
+                required = false,
+                description = "Nested threshold bounds (AOSP CL 4390685 A2uiProperty.nested)",
+            )
+        val annotationTagProperty =
+            A2uiProperty.dynamicString("tag", required = true, description = "Annotation tag")
+        val annotationNoteProperty =
+            A2uiProperty.dynamicString("note", required = false, description = "Annotation note")
+        val annotationsProperty =
+            A2uiProperty.nestedList(
+                key = "annotations",
+                properties = listOf(annotationTagProperty, annotationNoteProperty),
+                required = false,
+                maxItems = 8,
+                description = "Inline annotation items (AOSP CL 4390685 A2uiProperty.nestedList)",
             )
     }
 }

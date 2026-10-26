@@ -348,7 +348,11 @@ class A2uiPayloadsVerificationTest {
         // 3. Sorted required properties in generated JSON schema (even though metricName was declared before currentValue)
         val compactSchemaJson = catalogV09.toJsonSchemaString().replace("\\s+".toRegex(), "")
         val sparklineSection = compactSchemaJson.substringAfter("\"MetricSparkline\"")
-        val requiredArray = sparklineSection.substringAfter("\"required\":[").substringBefore("]")
+        val requiredArray =
+            sparklineSection
+                .substringAfter("\"threshold\"")
+                .substringAfter("\"required\":[")
+                .substringBefore("]")
         assertTrue(
             "Expected sorted required properties where currentValue precedes metricName, got: $requiredArray",
             requiredArray.indexOf("\"currentValue\"") in 0 until requiredArray.indexOf("\"metricName\""),
@@ -448,24 +452,27 @@ class A2uiPayloadsVerificationTest {
         }
         assertEquals(4, openedUrls.size)
 
-        // 2. Disallowed schemes (javascript:, file:, intent:, empty, control chars) throw A2uiRuntimeException
-        listOf(
-            "",
-            "javascript:alert(1)",
-            "file:///etc/passwd",
-            "intent://scan/#Intent;scheme=zxing;end",
-            "https://example.com/\nmalicious",
-            "example.com/no-scheme",
-        ).forEach { unsafeUrl ->
-            var threwRuntimeException = false
+        // 2. Disallowed schemes (javascript:, file:, intent:, empty, control chars, no scheme) throw A2uiRuntimeException
+        // with distinct diagnostic messages (AOSP CL 4346347)
+        val expectedErrorSnippets =
+            listOf(
+                "" to "empty URL",
+                "https://example.com/\nmalicious" to "control characters",
+                "example.com/no-scheme" to "no scheme",
+                "javascript:alert(1)" to "unsupported URL scheme 'javascript'",
+                "file:///etc/passwd" to "unsupported URL scheme 'file'",
+                "intent://scan/#Intent;scheme=zxing;end" to "unsupported URL scheme 'intent'",
+            )
+        expectedErrorSnippets.forEach { (unsafeUrl, expectedSnippet) ->
+            var caughtMessage: String? = null
             try {
                 functions.openUrl(unsafeUrl, dummyExecutionContext)
-            } catch (_: androidx.a2ui.model.protocol.A2uiException.A2uiRuntimeException) {
-                threwRuntimeException = true
+            } catch (e: androidx.a2ui.model.protocol.A2uiException.A2uiRuntimeException) {
+                caughtMessage = e.message
             }
             assertTrue(
-                "Expected A2uiRuntimeException for unsafe URL: '$unsafeUrl'",
-                threwRuntimeException,
+                "Expected A2uiRuntimeException containing '$expectedSnippet' for unsafe URL '$unsafeUrl', but got: $caughtMessage",
+                caughtMessage?.contains(expectedSnippet) == true,
             )
         }
         assertEquals("Unsafe URLs must not reach onOpenUrl", 4, openedUrls.size)
@@ -477,6 +484,45 @@ class A2uiPayloadsVerificationTest {
         assertTrue(functions.numeric(42.0, min = 0.0, max = 100.0, executionContext = dummyExecutionContext))
         assertTrue(functions.email("dev@droidknights.com", dummyExecutionContext))
         assertTrue(functions.regex("INC-8821", "^INC-[0-9]{4}$", dummyExecutionContext))
+
+        // 4. Verify official androidx.a2ui.compose:compose-ui-tooling-preview (98b3d9f6fc0 / CL 4324646)
+        // A2uiPreviewParameterProvider<A2uiSurfaceModelFactory> display names and lazy caching
+        val previewProvider = com.droidknights.a2ui.common.DroidKnightsA2uiSurfacePreviewProvider()
+        val firstFactories = previewProvider.values.toList()
+        val secondFactories = previewProvider.values.toList()
+        assertEquals(6, firstFactories.size)
+        assertEquals("1. Currency Exchange", previewProvider.getDisplayName(0))
+        assertEquals("6. Catalog V2 Transfer", previewProvider.getDisplayName(5))
+        assertTrue(
+            "A2uiPreviewParameterProvider.values should lazily cache A2uiSurfaceModelFactory instances",
+            firstFactories[0] === secondFactories[0],
+        )
+
+        // 5. Verify A2uiProperty.nested and A2uiProperty.nestedList schema & validation (CL 4390685)
+        // and A2uiRuntimeException property path attribution (CL 4389527 / 4389530)
+        val catalog = DroidKnightsCatalogs.createStandardCatalog()
+        val schemaJson = catalog.toJsonSchemaString()
+        assertTrue("Expected nested 'threshold' property in MetricSparkline schema", schemaJson.contains("\"threshold\""))
+        assertTrue("Expected nestedList 'annotations' property in MetricSparkline schema", schemaJson.contains("\"annotations\""))
+
+        val nestedPayloadStream =
+            listOf(
+                """{"version":"v0.9.1","createSurface":{"surfaceId":"nested_test","catalogId":"${DroidKnightsCatalogs.BASIC_CATALOG_ID}","sendDataModel":true}}""",
+                """{"version":"v0.9.1","updateComponents":{"surfaceId":"nested_test","components":[{"id":"root","component":"MetricSparkline","metricName":"API P99","currentValue":"42ms","threshold":{"warn":50.0,"critical":100.0},"annotations":[{"tag":"deploy-v2","note":"Canary rollout"},{"tag":"autoscale","note":"HPA +2 pods"}]}]}}""",
+            )
+        verifyStreamHasZeroErrors(
+            streamName = "NestedAndNestedListProperties_CL4390685",
+            catalogs = listOf(catalog),
+            lines = nestedPayloadStream,
+        )
+
+        val attributedError =
+            androidx.a2ui.model.protocol.A2uiException.A2uiRuntimeException(
+                "CircularClimateDial min (30.0) must be strictly less than max (16.0)",
+                mapOf("path" to com.droidknights.a2ui.catalog.schema.CircularClimateDialSchema.minProperty.key),
+            )
+        assertTrue(attributedError.message?.contains("CircularClimateDial min") == true)
+        assertEquals("min", attributedError.context["path"])
     }
 }
 

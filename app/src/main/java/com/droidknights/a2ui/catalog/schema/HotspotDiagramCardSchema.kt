@@ -45,8 +45,9 @@ interface HotspotDiagramCardSchema : A2uiComponent {
         properties: A2uiComponentProperties,
         modifier: Modifier,
     ) {
-        val title = properties.bind(titleProperty).orEmpty()
-        val hotspotLabel = properties.bind(hotspotLabelProperty).orEmpty()
+        val title = properties.bind(titleProperty)?.takeIf { it.isNotBlank() } ?: return
+        val hotspotLabel =
+            properties.bind(hotspotLabelProperty)?.takeIf { it.isNotBlank() } ?: return
         val zoneCode = properties.bind(zoneCodeProperty) ?: "ZONE-A1"
         val status = properties.bind(statusProperty) ?: "점검 필요"
         val action = properties[actionProperty]
