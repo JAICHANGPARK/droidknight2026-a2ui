@@ -58,12 +58,27 @@ interface MetricSparklineSchema : A2uiComponent {
                     listOf(0.7f, 0.55f, 0.65f, 0.35f, 0.85f, 0.2f, 0.9f)
                 }
             }
+        val thresholdObj = properties[thresholdProperty]
+        val thresholdSummary =
+            thresholdObj?.let { obj ->
+                val warn = obj[thresholdWarnProperty]
+                val crit = obj[thresholdCritProperty]
+                if (warn != null || crit != null) "SLO warn=$warn / crit=$crit" else null
+            }
+        val annotations =
+            properties[annotationsProperty].orEmpty().mapNotNull { itemProps ->
+                val tag = itemProps.bind(annotationTagProperty) ?: return@mapNotNull null
+                val note = itemProps.bind(annotationNoteProperty)
+                if (note.isNullOrBlank()) "#$tag" else "#$tag · $note"
+            }
 
         TypedContent(
             metricName = metricName,
             currentValue = currentValue,
             severity = severity,
             points = points,
+            thresholdSummary = thresholdSummary,
+            annotations = annotations,
             modifier = modifier,
         )
     }
@@ -74,6 +89,8 @@ interface MetricSparklineSchema : A2uiComponent {
         currentValue: String,
         severity: String,
         points: List<Float>,
+        thresholdSummary: String?,
+        annotations: List<String>,
         modifier: Modifier,
     )
 

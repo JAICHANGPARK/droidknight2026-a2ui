@@ -29,6 +29,8 @@ object MetricSparklineComponent : DomainCatalogSchemas.MetricSparkline {
         currentValue: String,
         severity: String,
         points: List<Float>,
+        thresholdSummary: String?,
+        annotations: List<String>,
         modifier: Modifier,
     ) {
         val isCritical = severity.equals("critical", ignoreCase = true)
@@ -40,34 +42,50 @@ object MetricSparklineComponent : DomainCatalogSchemas.MetricSparkline {
             modifier = modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surfaceVariant),
         ) {
-            Row(
+            Column(
                 modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = metricName,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = currentValue,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = accentColor,
-                    )
-                }
-                Canvas(modifier = Modifier.width(96.dp).height(32.dp)) {
-                    val stepX = size.width / (points.size - 1)
-                    for (i in 0 until points.size - 1) {
-                        drawLine(
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = metricName,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = currentValue,
+                            style = MaterialTheme.typography.titleMedium,
                             color = accentColor,
-                            start = Offset(i * stepX, size.height * (1f - points[i])),
-                            end = Offset((i + 1) * stepX, size.height * (1f - points[i + 1])),
-                            strokeWidth = 5f,
-                            cap = StrokeCap.Round,
                         )
                     }
+                    Canvas(modifier = Modifier.width(96.dp).height(32.dp)) {
+                        val stepX = size.width / (points.size - 1)
+                        for (i in 0 until points.size - 1) {
+                            drawLine(
+                                color = accentColor,
+                                start = Offset(i * stepX, size.height * (1f - points[i])),
+                                end = Offset((i + 1) * stepX, size.height * (1f - points[i + 1])),
+                                strokeWidth = 5f,
+                                cap = StrokeCap.Round,
+                            )
+                        }
+                    }
+                }
+                val metaParts = buildList {
+                    if (!thresholdSummary.isNullOrBlank()) add(thresholdSummary)
+                    addAll(annotations)
+                }
+                if (metaParts.isNotEmpty()) {
+                    Text(
+                        text = metaParts.joinToString("  |  "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

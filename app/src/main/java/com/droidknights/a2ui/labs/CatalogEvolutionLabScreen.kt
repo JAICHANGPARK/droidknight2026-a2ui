@@ -247,7 +247,7 @@ internal fun buildCatalogComparisonJsonl(catalogId: String, includeV2Widgets: Bo
 
     val v2Components =
         if (includeV2Widgets) {
-            """{"id":"spark_v2","component":"MetricSparkline","metricName":"FDS 이상거래 스코어","currentValue":"0.02% (안전)","severity":"normal","points":[0.72,0.58,0.66,0.35,0.88,0.24,0.94]},
+            """{"id":"spark_v2","component":"MetricSparkline","metricName":"FDS 이상거래 스코어","currentValue":"0.02% (안전)","severity":"normal","points":[0.72,0.58,0.66,0.35,0.88,0.24,0.94],"threshold":{"warn":0.5,"critical":0.85},"annotations":[{"tag":"FDS-AI","note":"실시간 검증"}]},
                {"id":"budget_v2","component":"PowerBudgetBar","title":"일일 송금 한도 (백만 원)","usedKw":{"path":"/transfer/usedLimit"},"maxKw":{"path":"/transfer/maxLimit"},"detail":"V2 전용 커스텀 컴포넌트"},"""
         } else {
             ""

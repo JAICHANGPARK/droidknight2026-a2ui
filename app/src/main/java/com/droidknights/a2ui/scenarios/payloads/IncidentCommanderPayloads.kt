@@ -68,7 +68,7 @@ object IncidentCommanderPayloads {
                     {"id":"root","component":"Card","child":"col_main"},
                     {"id":"col_main","component":"Column","children":["txt_header","spark_p99","dial_weight","chk_drain","tf_note","guard_failover"]},
                     {"id":"txt_header","component":"Text","text":"🚨 [INC-8821] PG 결제 승인 지연 우회 (1/2단계)"},
-                    {"id":"spark_p99","component":"MetricSparkline","metricName":"PG p99 Latency","currentValue":"8,420 ms","severity":"critical"},
+                    {"id":"spark_p99","component":"MetricSparkline","metricName":"PG p99 Latency","currentValue":"8,420 ms","severity":"critical","threshold":{"warn":500,"critical":2000},"annotations":[{"tag":"SLO-Breach","note":"p99 > 2s"}]},
                     {"id":"dial_weight","component":"CircularClimateDial","label":"백업 PG 우회 가중치","unit":"%","min":0,"max":100,"step":5,"value":$weightExpr},
                     {"id":"chk_drain","component":"CheckBox","label":"타임아웃 대기 큐 자동 재시도","value":$drainExpr},
                     {"id":"tf_note","component":"TextField","label":"조치 사유","value":$noteExpr,"checks":[{"condition":{"call":"required","args":{"value":$noteExpr}},"message":"우회 사유를 입력해 주세요."}]},
