@@ -43,10 +43,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun CurrencyExchangeDemo() {
+fun CurrencyExchangeDemo(
+    initialPresetIndex: Int = 0,
+    onNavigateHome: (() -> Unit)? = null,
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    var selectedPrompt by rememberSaveable { mutableIntStateOf(0) }
+    var selectedPrompt by rememberSaveable(initialPresetIndex) { mutableIntStateOf(initialPresetIndex) }
     var resetGeneration by rememberSaveable { mutableIntStateOf(0) }
     var customPromptQuery by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -182,6 +185,22 @@ fun CurrencyExchangeDemo() {
                             streamingStatusText =
                                 "✅ [완료] 모바일 수령 QR 바우처 발급 완료 (총 ${jsonlLines.size}줄)"
                         }
+                        "submit_banking_inquiry" -> {
+                            outboundLog.add(msg)
+                            isStreaming = true
+                            streamingStatusText = "📡 [금융 처리] 요청하신 금융 거래 완료 서피스 스트리밍 중..."
+                            val (reply, doneLines) =
+                                CurrencyExchangePayloads.buildBankingInquiryDoneJsonl(msg)
+                            agentActionReplies.add(reply)
+                            doneLines.forEach { line ->
+                                delay(200L)
+                                jsonlLines.add(line)
+                                processor.processInput(parser, line)
+                            }
+                            isStreaming = false
+                            streamingStatusText =
+                                "✅ [완료] 금융 거래 처리 및 영수증 서피스 업데이트 완료"
+                        }
                         "reset_exchange_surface" -> {
                             resetGeneration += 1
                         }
@@ -199,7 +218,8 @@ fun CurrencyExchangeDemo() {
             CurrencyExchangePayloads.promptPresets.getOrElse(selectedPrompt) {
                 CurrencyExchangePayloads.promptPresets.first()
             }
-        val promptToUse = customPromptQuery?.takeIf { it.isNotBlank() } ?: activePreset.userPromptText
+        val activeCustomQuery = customPromptQuery?.takeIf { it.isNotBlank() }
+        val promptToUse = activeCustomQuery ?: activePreset.userPromptText
 
         if (isGeminiActive) {
             streamingStatusText =
@@ -217,6 +237,17 @@ fun CurrencyExchangeDemo() {
                     rawLines = response.jsonlLines,
                     sourceLabel = "Gemini API (${response.modelUsed})",
                 )
+            } else if (activeCustomQuery != null) {
+                val (dynReply, dynLines) =
+                    CurrencyExchangePayloads.buildDynamicBankingJsonlForQuery(
+                        userQuery = activeCustomQuery,
+                        fallbackCaseIndex = selectedPrompt,
+                    )
+                agentIntroOverride = dynReply
+                streamJsonlLinesProgressively(
+                    rawLines = dynLines,
+                    sourceLabel = "동적 A2UI 생성",
+                )
             } else {
                 val fallbackLines = CurrencyExchangePayloads.buildJsonl(selectedPrompt)
                 streamJsonlLinesProgressively(
@@ -226,11 +257,24 @@ fun CurrencyExchangeDemo() {
             }
         } else {
             streamingStatusText = "🤖 [1/3] createSurface 수신 중 · 서피스 초기화..."
-            val rawLines = CurrencyExchangePayloads.buildJsonl(selectedPrompt)
-            streamJsonlLinesProgressively(
-                rawLines = rawLines,
-                sourceLabel = "프리셋 스트리밍",
-            )
+            if (activeCustomQuery != null) {
+                val (dynReply, dynLines) =
+                    CurrencyExchangePayloads.buildDynamicBankingJsonlForQuery(
+                        userQuery = activeCustomQuery,
+                        fallbackCaseIndex = selectedPrompt,
+                    )
+                agentIntroOverride = dynReply
+                streamJsonlLinesProgressively(
+                    rawLines = dynLines,
+                    sourceLabel = "동적 A2UI 생성",
+                )
+            } else {
+                val rawLines = CurrencyExchangePayloads.buildJsonl(selectedPrompt)
+                streamJsonlLinesProgressively(
+                    rawLines = rawLines,
+                    sourceLabel = "프리셋 스트리밍",
+                )
+            }
         }
     }
 
@@ -257,8 +301,8 @@ fun CurrencyExchangeDemo() {
     val activeSurfaces by processor.activeSurfaces.collectAsState()
 
     A2uiAgentChatScaffold(
-        scenarioTitle = "외화 환전",
-        scenarioSubtitle = "기존 7단계 환전 화면 이동과 A2UI 양방향 DataModel + ActionInterceptor 보안 통제를 비교합니다.",
+        scenarioTitle = "금융 슈퍼앱",
+        scenarioSubtitle = "외화 환전·간편 송금·카드 명세서·출국 3종 세트를 A2UI 양방향 서피스로 즉시 생성합니다.",
         catalogBadge = "CurrencyExchangeCatalog",
         prompts = CurrencyExchangePayloads.promptPresets,
         selectedPromptIndex = selectedPrompt,
@@ -275,8 +319,10 @@ fun CurrencyExchangeDemo() {
         expectedJsonlCount = 3,
         onUserSendPrompt = { userText ->
             customPromptQuery = userText
+            selectedPrompt = CurrencyExchangePayloads.resolvePresetIndexFromUserText(userText, selectedPrompt)
             resetGeneration += 1
         },
+        onNavigateBack = onNavigateHome,
         onClearOutbound = {
             resetGeneration += 1
         },
@@ -286,10 +332,9 @@ fun CurrencyExchangeDemo() {
                 onClick = { showGeminiSettingsDialog = true },
                 label = {
                     Text(
-                        text =
-                            if (isGeminiActive) "✨ Gemini API ($geminiModel) 연결됨"
-                            else "🔑 Gemini API 설정 (프리셋 모드)",
+                        text = if (isGeminiActive) "✨ API" else "API",
                         style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
                     )
                 },
             )

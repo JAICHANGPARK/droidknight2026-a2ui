@@ -28,9 +28,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
@@ -283,6 +285,7 @@ fun LegacyCurrencyExchangeScreen() {
                                             touchCount++
                                         },
                                         label = { Text("환전할 외화 ($selectedCurrency)") },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth(),
                                     )
@@ -298,6 +301,7 @@ fun LegacyCurrencyExchangeScreen() {
                                             touchCount++
                                         },
                                         label = { Text("출금될 원화 (KRW)") },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth(),
                                     )
@@ -420,13 +424,21 @@ fun LegacyCurrencyExchangeScreen() {
                             }
 
                             entry<ExchangeLegacyNavKey.Step6TermsAgreement> {
+                                val bothAgreed = agreeTerm1 && agreeTerm2
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Text(
                                         text = "약관 및 수령 유의사항 동의",
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold,
                                     )
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier =
+                                            Modifier.fillMaxWidth().clickable {
+                                                touchCount++
+                                                agreeTerm1 = !agreeTerm1
+                                            },
+                                    ) {
                                         Checkbox(
                                             checked = agreeTerm1,
                                             onCheckedChange = {
@@ -436,7 +448,14 @@ fun LegacyCurrencyExchangeScreen() {
                                         )
                                         Text("[필수] 외화 환전 거래 기본약관 동의", style = MaterialTheme.typography.bodyMedium)
                                     }
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier =
+                                            Modifier.fillMaxWidth().clickable {
+                                                touchCount++
+                                                agreeTerm2 = !agreeTerm2
+                                            },
+                                    ) {
                                         Checkbox(
                                             checked = agreeTerm2,
                                             onCheckedChange = {
@@ -446,11 +465,19 @@ fun LegacyCurrencyExchangeScreen() {
                                         )
                                         Text("[필수] 수령 시 본인 여권 지참 확인", style = MaterialTheme.typography.bodyMedium)
                                     }
+                                    if (!bothAgreed) {
+                                        Text(
+                                            text = "⚠️ 필수 약관 2개 항목에 모두 체크해야 다음 단계로 이동할 수 있습니다.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                        )
+                                    }
                                     Button(
                                         onClick = {
                                             touchCount++
                                             navBackStack.add(ExchangeLegacyNavKey.Step7AccountPin)
                                         },
+                                        enabled = bothAgreed,
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Text("다음: 계좌 비밀번호 입력 (7/7단계)")
@@ -459,6 +486,7 @@ fun LegacyCurrencyExchangeScreen() {
                             }
 
                             entry<ExchangeLegacyNavKey.Step7AccountPin> {
+                                val isPinValid = accountPin.length == 4
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Text(
                                         text = "계좌 비밀번호 입력",
@@ -472,22 +500,33 @@ fun LegacyCurrencyExchangeScreen() {
                                     )
                                     OutlinedTextField(
                                         value = accountPin,
-                                        onValueChange = {
-                                            if (it.length <= 4) {
+                                        onValueChange = { raw ->
+                                            val digits = raw.filter { it.isDigit() }.take(4)
+                                            if (digits != accountPin) {
                                                 touchCount++
-                                                accountPin = it
+                                                accountPin = digits
                                             }
                                         },
-                                        label = { Text("비밀번호 4자리") },
+                                        label = { Text("비밀번호 숫자 4자리") },
                                         visualTransformation = PasswordVisualTransformation(),
+                                        keyboardOptions =
+                                            KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth(),
                                     )
+                                    if (!isPinValid) {
+                                        Text(
+                                            text = "숫자 4자리를 입력해 주세요 (${accountPin.length}/4)",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                     Button(
                                         onClick = {
                                             touchCount++
                                             navBackStack.add(ExchangeLegacyNavKey.Completed)
                                         },
+                                        enabled = isPinValid,
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Text("환전 신청 완료")

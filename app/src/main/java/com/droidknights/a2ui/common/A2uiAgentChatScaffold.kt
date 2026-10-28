@@ -35,6 +35,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -90,7 +91,7 @@ val LocalInitialComparisonMode = compositionLocalOf<A2uiComparisonDisplayMode?> 
 internal fun ChatBubble(
     text: String,
     fromUser: Boolean,
-    senderLabel: String = if (fromUser) "나 (고객)" else "AI 에이전트",
+    senderLabel: String = "AI 챗봇",
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -98,11 +99,11 @@ internal fun ChatBubble(
         horizontalAlignment = if (fromUser) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            if (!fromUser) {
+        if (!fromUser) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 Box(
                     modifier =
                         Modifier.size(22.dp)
@@ -115,13 +116,13 @@ internal fun ChatBubble(
                         style = MaterialTheme.typography.labelSmall,
                     )
                 }
+                Text(
+                    text = senderLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium,
+                )
             }
-            Text(
-                text = senderLabel,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium,
-            )
         }
         Surface(
             color =
@@ -413,6 +414,7 @@ fun A2uiAgentChatScaffold(
     isStreaming: Boolean = false,
     expectedJsonlCount: Int = 3,
     onUserSendPrompt: ((String) -> Unit)? = null,
+    onNavigateBack: (() -> Unit)? = null,
     extraHeaderControls: (@Composable () -> Unit)? = null,
     extraTimelineBanners: (@Composable () -> Unit)? = null,
     legacyAsIsContent: (@Composable () -> Unit)? = null,
@@ -433,27 +435,30 @@ fun A2uiAgentChatScaffold(
 
     var showTelemetryDrawer by rememberSaveable { mutableStateOf(false) }
 
-    var customInputText by rememberSaveable(selectedPromptIndex) {
+    var customInputText by rememberSaveable {
         mutableStateOf("")
     }
-    var displayedUserMessage by rememberSaveable(selectedPromptIndex) {
-        mutableStateOf(activePreset.userPromptText)
+    var customSubmittedMessage by rememberSaveable {
+        mutableStateOf<String?>(null)
     }
+    val displayedUserMessage = customSubmittedMessage ?: activePreset.userPromptText
     var chatTurnCounter by rememberSaveable { mutableIntStateOf(0) }
 
     val sendPromptMessage: (String, Int?) -> Unit = { promptText, targetIdx ->
         val finalPrompt = promptText.trim().ifBlank { activePreset.userPromptText }
-        displayedUserMessage = finalPrompt
         customInputText = ""
         chatTurnCounter += 1
-        val resolvedIdx = targetIdx ?: matchOfflinePromptIndex(finalPrompt, prompts)
-        if (onUserSendPrompt != null) {
-            if (resolvedIdx != null && resolvedIdx != selectedPromptIndex) {
-                onSelectPrompt(resolvedIdx)
-            }
-            onUserSendPrompt(finalPrompt)
+        if (targetIdx != null) {
+            // Quick-prompt chip clicked
+            customSubmittedMessage = null
+            onSelectPrompt(targetIdx)
         } else {
-            if (resolvedIdx != null && resolvedIdx != selectedPromptIndex) {
+            // Free-form user text submitted
+            customSubmittedMessage = finalPrompt
+            val resolvedIdx = matchOfflinePromptIndex(finalPrompt, prompts)
+            if (onUserSendPrompt != null) {
+                onUserSendPrompt(finalPrompt)
+            } else if (resolvedIdx != null && resolvedIdx != selectedPromptIndex) {
                 onSelectPrompt(resolvedIdx)
             } else {
                 onClearOutbound()
@@ -462,104 +467,90 @@ fun A2uiAgentChatScaffold(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 1. Top App Bar: Title + Mode Switcher (Chat vs As-Is 7-Step vs 2-Pane) + JSONL Telemetry Toggle
+        // 1. Clean 1-Row Top App Bar
         Surface(
-            tonalElevation = 2.dp,
-            shadowElevation = 2.dp,
+            tonalElevation = 1.dp,
+            shadowElevation = 1.dp,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.weight(1f),
-                    ) {
+                    if (onNavigateBack != null) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = CircleShape,
+                            modifier = Modifier.size(32.dp),
+                            onClick = onNavigateBack,
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "←",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    } else {
                         Box(
                             modifier =
-                                Modifier.size(32.dp)
+                                Modifier.size(30.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(text = "🤖", style = MaterialTheme.typography.titleSmall)
                         }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "$scenarioTitle AI 비서",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                text = "$catalogBadge · $scenarioSubtitle",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
                     }
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        AssistChip(
-                            onClick = { onClearOutbound() },
-                            label = {
-                                Text(
-                                    text = "🔄 초기화",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    maxLines = 1,
-                                )
-                            },
-                        )
-                        FilterChip(
-                            selected = showTelemetryDrawer,
-                            onClick = { showTelemetryDrawer = !showTelemetryDrawer },
-                            label = {
-                                val eventCount = outboundLog.size
-                                val badgeText =
-                                    if (eventCount > 0) {
-                                        "🔍 JSONL(${jsonlStream.size})·이벤트($eventCount)"
-                                    } else {
-                                        "🔍 JSONL(${jsonlStream.size})"
-                                    }
-                                Text(
-                                    text = badgeText,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    maxLines = 1,
-                                )
-                            },
-                        )
-                    }
+                    Text(
+                        text = "AI 챗봇",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
 
-                // Mode Switcher Row + Optional Extra Header Controls (e.g. Gemini API Settings Chip)
                 Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (legacyAsIsContent != null) {
-                        A2uiComparisonDisplayMode.entries.forEach { mode ->
-                            FilterChip(
-                                selected = displayMode == mode,
-                                onClick = { userOverriddenModeName = mode.name },
-                                label = { Text(mode.label) },
-                            )
-                        }
+                        val isAsIs = displayMode == A2uiComparisonDisplayMode.AS_IS_LEGACY_APP
+                        FilterChip(
+                            selected = isAsIs,
+                            onClick = {
+                                userOverriddenModeName =
+                                    if (isAsIs) A2uiComparisonDisplayMode.TO_BE_AGENT_CHAT.name
+                                    else A2uiComparisonDisplayMode.AS_IS_LEGACY_APP.name
+                            },
+                            label = {
+                                Text(
+                                    text = if (isAsIs) "AI 챗봇" else "기존 7단계",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            },
+                        )
                     }
                     extraHeaderControls?.invoke()
+                    FilterChip(
+                        selected = showTelemetryDrawer,
+                        onClick = { showTelemetryDrawer = !showTelemetryDrawer },
+                        label = {
+                            Text(
+                                text = "JSONL",
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                            )
+                        },
+                    )
                 }
             }
         }
@@ -574,14 +565,30 @@ fun A2uiAgentChatScaffold(
         ) {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp),
             ) {
                 Column(
                     modifier =
                         Modifier.fillMaxWidth()
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
+                    if (legacyAsIsContent != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            A2uiComparisonDisplayMode.entries.forEach { mode ->
+                                FilterChip(
+                                    selected = displayMode == mode,
+                                    onClick = { userOverriddenModeName = mode.name },
+                                    label = { Text(mode.label) },
+                                )
+                            }
+                        }
+                    }
                     A2uiTelemetryPanel(
                         outboundLog = outboundLog,
                         jsonlStream = jsonlStream,
@@ -615,93 +622,51 @@ fun A2uiAgentChatScaffold(
                         Modifier.weight(1f)
                             .fillMaxWidth()
                             .verticalScroll(chatScrollState)
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    // System security notice pill at top of chat
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                            shape = RoundedCornerShape(50),
-                        ) {
-                            Text(
-                                text = "🔒 A2UI 선언형 프로토콜 연결됨 · 등록된 카탈로그 위젯만 렌더링됩니다",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                            )
-                        }
-                    }
-
                     // Turn 1: User's natural language chat bubble
                     ChatBubble(
                         text = displayedUserMessage,
                         fromUser = true,
                     )
 
-                    // Turn 2: Agent's response bubble + Progressive Streaming Status Bar
+                    // Turn 2: Agent's response bubble
                     ChatBubble(
-                        text = agentIntroOverride ?: activePreset.agentIntroText,
+                        text =
+                            if (eventMessages.isNotEmpty() && agentActionReplies.isNotEmpty()) {
+                                agentActionReplies.last()
+                            } else {
+                                agentIntroOverride ?: activePreset.agentIntroText
+                            },
                         fromUser = false,
-                        senderLabel = "AI 에이전트 · ${activePreset.schemaBadge}",
+                        senderLabel = "AI 금융비서",
                     )
 
-                    // Progressive JSONL Streaming Status Banner
-                    val currentStepCount = jsonlStream.size.coerceAtMost(expectedJsonlCount)
-                    val statusLabel =
-                        streamingStatusText
-                            ?: when {
-                                isStreaming || jsonlStream.size < expectedJsonlCount ->
-                                    "📡 A2UI JSONL 스트리밍 중 ($currentStepCount/$expectedJsonlCount) · createSurface → updateComponents(Shimmer) → updateDataModel"
-                                else ->
-                                    "✅ A2UI 스트리밍 완료 (${jsonlStream.size}줄 수신) · 인라인 네이티브 Compose 서피스"
-                            }
-
-                    Surface(
-                        color =
-                            if (isStreaming) MaterialTheme.colorScheme.tertiaryContainer
-                            else MaterialTheme.colorScheme.surfaceContainerLow,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                    // Subtle Streaming Progress Banner (shown ONLY while streaming)
+                    if (isStreaming) {
+                        val currentStepCount = jsonlStream.size.coerceAtMost(expectedJsonlCount)
+                        val statusLabel =
+                            streamingStatusText
+                                ?: "📡 A2UI 스트리밍 중 ($currentStepCount/$expectedJsonlCount)..."
+                        Surface(
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
+                            Column(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 Text(
                                     text = statusLabel,
                                     style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = FontFamily.Monospace,
-                                    color =
-                                        if (isStreaming)
-                                            MaterialTheme.colorScheme.onTertiaryContainer
-                                        else MaterialTheme.colorScheme.primary,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
                                     fontWeight = FontWeight.SemiBold,
                                 )
-                            }
-                            if (isStreaming) {
                                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
                         }
-                    }
-
-                    // Multi-turn Dispatched Action Cards & Agent Replies in the Chat Timeline
-                    if (eventMessages.isNotEmpty()) {
-                        val latestIdx = eventMessages.lastIndex
-                        DispatchedDataModelEventCard(
-                            event = eventMessages[latestIdx],
-                            stepIndex = latestIdx + 1,
-                            priorEvents = eventMessages.dropLast(1),
-                            agentReply = agentActionReplies.getOrNull(latestIdx),
-                        )
                     }
 
                     outboundLog.filterIsInstance<A2uiClientErrorMessage>().forEach { msg ->
@@ -712,10 +677,8 @@ fun A2uiAgentChatScaffold(
                         )
                     }
 
-                    extraTimelineBanners?.invoke()
-
                     // Live inline A2uiSurface rendered inside the Agent's chat flow
-                    Box(modifier = Modifier.fillMaxWidth().padding(start = 4.dp)) {
+                    Box(modifier = Modifier.fillMaxWidth()) {
                         surfaceContent()
                     }
 
@@ -734,7 +697,7 @@ fun A2uiAgentChatScaffold(
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        // Quick Prompt Suggestion Chips Row (pinned right above the chat input box)
+                        // Quick Prompt Suggestion Chips Row
                         Row(
                             modifier =
                                 Modifier.fillMaxWidth()
@@ -742,12 +705,6 @@ fun A2uiAgentChatScaffold(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                text = "빠른 질문:",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.SemiBold,
-                            )
                             prompts.forEachIndexed { index, preset ->
                                 val isSelected = selectedPromptIndex == index
                                 SuggestionChip(
@@ -756,9 +713,7 @@ fun A2uiAgentChatScaffold(
                                     },
                                     label = {
                                         Text(
-                                            text =
-                                                if (isSelected) "💬 ${preset.shortChipLabel} ✓"
-                                                else "💬 ${preset.shortChipLabel}",
+                                            text = preset.shortChipLabel,
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight =
                                                 if (isSelected) FontWeight.Bold
@@ -781,7 +736,7 @@ fun A2uiAgentChatScaffold(
                                 modifier = Modifier.weight(1f),
                                 placeholder = {
                                     Text(
-                                        text = activePreset.userPromptText,
+                                        text = "메시지를 입력하세요",
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.bodyMedium,
@@ -796,17 +751,6 @@ fun A2uiAgentChatScaffold(
                                             sendPromptMessage(customInputText, null)
                                         }
                                     ),
-                                trailingIcon = {
-                                    if (customInputText.isEmpty()) {
-                                        TextButton(
-                                            onClick = {
-                                                customInputText = activePreset.userPromptText
-                                            }
-                                        ) {
-                                            Text("예시 채우기", style = MaterialTheme.typography.labelSmall)
-                                        }
-                                    }
-                                },
                             )
                             Button(
                                 onClick = {
@@ -814,7 +758,7 @@ fun A2uiAgentChatScaffold(
                                 },
                                 shape = RoundedCornerShape(24.dp),
                             ) {
-                                Text("전송 ↑", fontWeight = FontWeight.Bold)
+                                Text("전송", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -826,13 +770,32 @@ fun A2uiAgentChatScaffold(
             when {
                 displayMode == A2uiComparisonDisplayMode.AS_IS_LEGACY_APP &&
                     legacyAsIsContent != null -> {
-                    Column(
-                        modifier =
-                            Modifier.fillMaxSize()
-                                .verticalScroll(rememberScrollState())
-                                .padding(16.dp),
-                    ) {
-                        legacyAsIsContent()
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Column(
+                            modifier =
+                                Modifier.fillMaxSize()
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 88.dp),
+                        ) {
+                            legacyAsIsContent()
+                        }
+                        ExtendedFloatingActionButton(
+                            onClick = {
+                                userOverriddenModeName = A2uiComparisonDisplayMode.TO_BE_AGENT_CHAT.name
+                            },
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                            shape = RoundedCornerShape(28.dp),
+                            modifier =
+                                Modifier.align(Alignment.BottomEnd)
+                                    .padding(16.dp),
+                        ) {
+                            Text(
+                                text = "🤖 AI 금융비서 (A2UI 전환)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
                     }
                 }
                 displayMode == A2uiComparisonDisplayMode.ADAPTIVE_TWO_PANE_SPLIT &&
@@ -895,11 +858,13 @@ private fun matchOfflinePromptIndex(
         }
     }
     return when {
-        q.contains("엔") || q.contains("jpy") || q.contains("인천공항") -> 0
-        q.contains("달러") || q.contains("usd") || q.contains("소액권") -> 1
-        q.contains("유로") || q.contains("프랑") || q.contains("eur") -> 2
-        q.contains("예약") || q.contains("목표") || q.contains("자동") -> 3
-        q.contains("재환전") || q.contains("현찰") || q.contains("남은") -> 4
+        q.contains("이체") || q.contains("송금") || q.contains("박우리") || q.contains("김신한") || q.contains("회비") -> 1
+        q.contains("카드") || q.contains("명세서") || q.contains("즉시결제") || q.contains("분할") || q.contains("할부") -> 2
+        q.contains("보험") || q.contains("출국") || q.contains("3종") -> 3
+        q.contains("달러") || q.contains("usd") || q.contains("소액권") -> 4
+        q.contains("예약") || q.contains("목표") || q.contains("자동") -> 5
+        q.contains("재환전") || q.contains("현찰") || q.contains("남은") -> 6
+        q.contains("엔") || q.contains("jpy") || q.contains("인천공항") || q.contains("환전") -> 0
         else -> null
     }
 }

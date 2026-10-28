@@ -54,6 +54,14 @@ sealed interface A2uiTopLevelRoute : NavKey {
     val emojiIcon: String
 
     @Serializable
+    data object BankingHome : A2uiTopLevelRoute {
+        override val routeId = "home"
+        override val tabTitle = "🏦 뱅킹 홈"
+        override val shortRailLabel = "뱅킹홈"
+        override val emojiIcon = "🏦"
+    }
+
+    @Serializable
     data object CurrencyExchange : A2uiTopLevelRoute {
         override val routeId = "exchange"
         override val tabTitle = "💴 외화 환전"
@@ -128,6 +136,7 @@ sealed interface A2uiTopLevelRoute : NavKey {
     companion object {
         val ALL_ROUTES: List<A2uiTopLevelRoute> =
             listOf(
+                BankingHome,
                 CurrencyExchange,
                 IncidentCommander,
                 ContextualCockpit,
@@ -140,7 +149,7 @@ sealed interface A2uiTopLevelRoute : NavKey {
             )
 
         fun fromRouteId(id: String): A2uiTopLevelRoute =
-            ALL_ROUTES.firstOrNull { it.routeId == id } ?: CurrencyExchange
+            ALL_ROUTES.firstOrNull { it.routeId == id } ?: BankingHome
     }
 }
 

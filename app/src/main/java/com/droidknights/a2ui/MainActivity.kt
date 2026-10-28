@@ -30,6 +30,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.entryProvider
@@ -46,6 +51,7 @@ import com.droidknights.a2ui.navigation.TwoPaneScene
 import com.droidknights.a2ui.navigation.rememberA2uiWindowLayoutInfo
 import com.droidknights.a2ui.navigation.rememberTopLevelBackStack
 import com.droidknights.a2ui.navigation.rememberTwoPaneSceneStrategy
+import com.droidknights.a2ui.scenarios.BankingHomeScreen
 import com.droidknights.a2ui.scenarios.ContextualCockpitDemo
 import com.droidknights.a2ui.scenarios.CurrencyExchangeDemo
 import com.droidknights.a2ui.scenarios.DynamicMashupSheetDemo
@@ -60,7 +66,7 @@ class MainActivity : ComponentActivity() {
         val initialRouteId = intent?.getStringExtra("route")
         val initialRoute =
             initialRouteId?.let { A2uiTopLevelRoute.fromRouteId(it) }
-                ?: A2uiTopLevelRoute.CurrencyExchange
+                ?: A2uiTopLevelRoute.BankingHome
         val initialMode =
             intent?.getStringExtra("mode")?.let { modeName ->
                 A2uiComparisonDisplayMode.entries.firstOrNull { it.name == modeName }
@@ -82,7 +88,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun DroidKnightsA2uiApp(
-    startRoute: A2uiTopLevelRoute = A2uiTopLevelRoute.CurrencyExchange,
+    startRoute: A2uiTopLevelRoute = A2uiTopLevelRoute.BankingHome,
 ) {
     val topLevelBackStack = rememberTopLevelBackStack(startRoute)
     val twoPaneStrategy = rememberTwoPaneSceneStrategy<A2uiTopLevelRoute>()
@@ -90,6 +96,14 @@ fun DroidKnightsA2uiApp(
     val routes = A2uiTopLevelRoute.ALL_ROUTES
     val selectedRoute = topLevelBackStack.topLevelKey
     val selectedIndex = routes.indexOf(selectedRoute).coerceAtLeast(0)
+
+    var selectedBankingPresetIndex by rememberSaveable { mutableIntStateOf(0) }
+    var selectedBankingModeName by rememberSaveable { mutableStateOf<String?>(null) }
+    val inheritedMode = LocalInitialComparisonMode.current
+    val effectiveMode =
+        selectedBankingModeName?.let { name ->
+            A2uiComparisonDisplayMode.entries.firstOrNull { it.name == name }
+        } ?: inheritedMode
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -104,7 +118,11 @@ fun DroidKnightsA2uiApp(
                         WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
                     ),
         ) {
-            if (!windowLayoutInfo.shouldUseNavigationRail) {
+            val isBankingFlow =
+                selectedRoute == A2uiTopLevelRoute.BankingHome ||
+                    selectedRoute == A2uiTopLevelRoute.CurrencyExchange
+
+            if (!windowLayoutInfo.shouldUseNavigationRail && !isBankingFlow) {
                 PrimaryScrollableTabRow(
                     selectedTabIndex = selectedIndex,
                     edgePadding = 12.dp,
@@ -127,7 +145,7 @@ fun DroidKnightsA2uiApp(
             }
 
             Row(modifier = Modifier.fillMaxSize()) {
-                if (windowLayoutInfo.shouldUseNavigationRail) {
+                if (windowLayoutInfo.shouldUseNavigationRail && !isBankingFlow) {
                     NavigationRail(
                         modifier =
                             Modifier.fillMaxHeight()
@@ -162,17 +180,38 @@ fun DroidKnightsA2uiApp(
                             .fillMaxHeight()
                             .imePadding(),
                 ) {
-                    NavDisplay(
-                        backStack = topLevelBackStack.backStack,
-                        onBack = { topLevelBackStack.pop() },
-                        sceneStrategies = listOf(twoPaneStrategy),
-                        entryProvider =
-                            entryProvider {
-                                entry<A2uiTopLevelRoute.CurrencyExchange>(
-                                    metadata = TwoPaneScene.twoPane()
-                                ) {
-                                    CurrencyExchangeDemo()
-                                }
+                    CompositionLocalProvider(LocalInitialComparisonMode provides effectiveMode) {
+                        NavDisplay(
+                            backStack = topLevelBackStack.backStack,
+                            onBack = { topLevelBackStack.pop() },
+                            sceneStrategies = listOf(twoPaneStrategy),
+                            entryProvider =
+                                entryProvider {
+                                    entry<A2uiTopLevelRoute.BankingHome> {
+                                        BankingHomeScreen(
+                                            onOpenAiAssistant = { presetIdx, mode ->
+                                                selectedBankingPresetIndex = presetIdx
+                                                selectedBankingModeName = mode.name
+                                                topLevelBackStack.selectTopLevel(A2uiTopLevelRoute.CurrencyExchange)
+                                            },
+                                            onOpenAllLabsShowcase = {
+                                                selectedBankingModeName = A2uiComparisonDisplayMode.TO_BE_AGENT_CHAT.name
+                                                topLevelBackStack.selectTopLevel(A2uiTopLevelRoute.IncidentCommander)
+                                            },
+                                        )
+                                    }
+                                    entry<A2uiTopLevelRoute.CurrencyExchange>(
+                                        metadata = TwoPaneScene.twoPane()
+                                    ) {
+                                        CurrencyExchangeDemo(
+                                            initialPresetIndex = selectedBankingPresetIndex,
+                                            onNavigateHome = {
+                                                topLevelBackStack.selectTopLevel(
+                                                    A2uiTopLevelRoute.BankingHome
+                                                )
+                                            },
+                                        )
+                                    }
                                 entry<A2uiTopLevelRoute.IncidentCommander>(
                                     metadata = TwoPaneScene.twoPane()
                                 ) {
@@ -234,7 +273,8 @@ fun DroidKnightsA2uiApp(
                                     }
                                 }
                             },
-                    )
+                        )
+                    }
                 }
             }
         }
