@@ -270,7 +270,7 @@ private fun flattenContextMap(
 
 /**
  * Dialog for configuring the Gemini API Key (`local.properties` or runtime override),
- * model name (`gemini-2.5-flash` / `gemini-2.5-pro`), and toggling Gemini API vs Offline Preset mode.
+ * model name (`gemini-3.8-flash` / `gemini-4-argon` / `gemini-3.5-flash-lite`), and toggling Gemini API vs Offline Preset mode.
  */
 @Composable
 fun GeminiApiSettingsDialog(
@@ -282,7 +282,7 @@ fun GeminiApiSettingsDialog(
     onSave: (apiKey: String, model: String, enabled: Boolean) -> Unit,
 ) {
     var apiKeyInput by rememberSaveable { mutableStateOf(initialApiKey) }
-    var modelInput by rememberSaveable { mutableStateOf(initialModel.ifBlank { "gemini-2.5-flash" }) }
+    var modelInput by rememberSaveable { mutableStateOf(initialModel.ifBlank { "gemini-3.8-flash" }) }
     var enabledInput by rememberSaveable { mutableStateOf(initialEnabled) }
     var showRawKey by rememberSaveable { mutableStateOf(false) }
 
@@ -364,8 +364,11 @@ fun GeminiApiSettingsDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("gemini-2.5-flash", "gemini-2.5-pro").forEach { presetModel ->
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf("gemini-3.8-flash", "gemini-4-argon", "gemini-3.5-flash-lite").forEach { presetModel ->
                         FilterChip(
                             selected = modelInput == presetModel,
                             onClick = { modelInput = presetModel },
@@ -466,8 +469,8 @@ fun A2uiAgentChatScaffold(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -476,42 +479,28 @@ fun A2uiAgentChatScaffold(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.weight(1f),
                     ) {
                         Box(
                             modifier =
-                                Modifier.size(36.dp)
+                                Modifier.size(32.dp)
                                     .clip(CircleShape)
                                     .background(MaterialTheme.colorScheme.primaryContainer),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(text = "🤖", style = MaterialTheme.typography.titleMedium)
+                            Text(text = "🤖", style = MaterialTheme.typography.titleSmall)
                         }
-                        Column {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Text(
-                                    text = "$scenarioTitle AI 비서",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                Surface(
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = RoundedCornerShape(6.dp),
-                                ) {
-                                    Text(
-                                        text = catalogBadge,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                    )
-                                }
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = scenarioSubtitle,
+                                text = "$scenarioTitle AI 비서",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = "$catalogBadge · $scenarioSubtitle",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -526,7 +515,13 @@ fun A2uiAgentChatScaffold(
                     ) {
                         AssistChip(
                             onClick = { onClearOutbound() },
-                            label = { Text("🔄 다시 실행", style = MaterialTheme.typography.labelSmall) },
+                            label = {
+                                Text(
+                                    text = "🔄 초기화",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                )
+                            },
                         )
                         FilterChip(
                             selected = showTelemetryDrawer,
@@ -535,11 +530,15 @@ fun A2uiAgentChatScaffold(
                                 val eventCount = outboundLog.size
                                 val badgeText =
                                     if (eventCount > 0) {
-                                        "🔍 JSONL(${jsonlStream.size}) · 이벤트($eventCount)"
+                                        "🔍 JSONL(${jsonlStream.size})·이벤트($eventCount)"
                                     } else {
-                                        "🔍 JSONL 로그 (${jsonlStream.size})"
+                                        "🔍 JSONL(${jsonlStream.size})"
                                     }
-                                Text(badgeText, style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    text = badgeText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1,
+                                )
                             },
                         )
                     }

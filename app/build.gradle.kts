@@ -17,7 +17,7 @@ val geminiApiKey: String =
         .trim()
         .replace("\"", "\\\"")
 val geminiModel: String =
-    (localProps.getProperty("GEMINI_MODEL") ?: System.getenv("GEMINI_MODEL") ?: "gemini-2.5-flash")
+    (localProps.getProperty("GEMINI_MODEL") ?: System.getenv("GEMINI_MODEL") ?: "gemini-3.8-flash")
         .trim()
         .replace("\"", "\\\"")
 

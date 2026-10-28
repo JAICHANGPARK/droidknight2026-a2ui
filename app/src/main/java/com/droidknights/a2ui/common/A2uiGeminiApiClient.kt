@@ -83,7 +83,7 @@ object A2uiGeminiApiClient {
 
     fun isGeminiApiEnabled(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getBoolean(KEY_ENABLED, true)
+        return prefs.getBoolean(KEY_ENABLED, false)
     }
 
     fun setGeminiApiEnabled(context: Context, enabled: Boolean) {

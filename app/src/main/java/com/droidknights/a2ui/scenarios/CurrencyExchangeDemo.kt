@@ -218,11 +218,6 @@ fun CurrencyExchangeDemo() {
                     sourceLabel = "Gemini API (${response.modelUsed})",
                 )
             } else {
-                val errorReason =
-                    geminiResult.exceptionOrNull()?.message?.take(80) ?: "네트워크/응답 오류"
-                interceptorAuditLog.add(
-                    "⚠️ Gemini API 폴백 ($errorReason) → 오프라인 안전 프리셋 스트리밍으로 자동 전환됨",
-                )
                 val fallbackLines = CurrencyExchangePayloads.buildJsonl(selectedPrompt)
                 streamJsonlLinesProgressively(
                     rawLines = fallbackLines,

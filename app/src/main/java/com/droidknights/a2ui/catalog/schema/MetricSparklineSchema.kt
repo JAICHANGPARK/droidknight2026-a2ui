@@ -112,23 +112,23 @@ interface MetricSparklineSchema : A2uiComponent {
         val thresholdCritProperty =
             A2uiProperty.number("critical", required = false, description = "Critical threshold")
         val thresholdProperty =
-            A2uiProperty.nested(
+            A2uiProperty.nestedObject(
                 key = "threshold",
                 properties = listOf(thresholdWarnProperty, thresholdCritProperty),
                 required = false,
-                description = "Nested threshold bounds (AOSP CL 4390685 A2uiProperty.nested)",
+                description = "Nested threshold bounds (A2uiProperty.nestedObject)",
             )
         val annotationTagProperty =
             A2uiProperty.dynamicString("tag", required = true, description = "Annotation tag")
         val annotationNoteProperty =
             A2uiProperty.dynamicString("note", required = false, description = "Annotation note")
         val annotationsProperty =
-            A2uiProperty.nestedList(
+            A2uiProperty.nestedObjectList(
                 key = "annotations",
                 properties = listOf(annotationTagProperty, annotationNoteProperty),
                 required = false,
                 maxItems = 8,
-                description = "Inline annotation items (AOSP CL 4390685 A2uiProperty.nestedList)",
+                description = "Inline annotation items (A2uiProperty.nestedObjectList)",
             )
     }
 }
