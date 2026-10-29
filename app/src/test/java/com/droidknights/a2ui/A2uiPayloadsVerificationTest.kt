@@ -498,12 +498,20 @@ class A2uiPayloadsVerificationTest {
             firstFactories[0] === secondFactories[0],
         )
 
-        // 5. Verify A2uiProperty.nested and A2uiProperty.nestedList schema & validation (CL 4390685)
-        // and A2uiRuntimeException property path attribution (CL 4389527 / 4389530)
+        // 5. Verify A2uiProperty.nestedObject, A2uiProperty.nestedObjectList, and A2uiProperty.dynamicAny
+        // schema & validation (merged CL 4390685 rev 10) and A2uiRuntimeException property path attribution
+        val dynamicAnyProp =
+            androidx.a2ui.compose.runtime.A2uiProperty.dynamicAny(
+                key = "dynamicPayload",
+                required = false,
+                description = "Dynamic arbitrary JSON value (CL 4390685 A2uiProperty.dynamicAny)",
+            )
+        assertEquals("dynamicPayload", dynamicAnyProp.key)
+
         val catalog = DroidKnightsCatalogs.createStandardCatalog()
         val schemaJson = catalog.toJsonSchemaString()
-        assertTrue("Expected nested 'threshold' property in MetricSparkline schema", schemaJson.contains("\"threshold\""))
-        assertTrue("Expected nestedList 'annotations' property in MetricSparkline schema", schemaJson.contains("\"annotations\""))
+        assertTrue("Expected nestedObject 'threshold' property in MetricSparkline schema", schemaJson.contains("\"threshold\""))
+        assertTrue("Expected nestedObjectList 'annotations' property in MetricSparkline schema", schemaJson.contains("\"annotations\""))
 
         val nestedPayloadStream =
             listOf(
@@ -511,9 +519,26 @@ class A2uiPayloadsVerificationTest {
                 """{"version":"v0.9.1","updateComponents":{"surfaceId":"nested_test","components":[{"id":"root","component":"MetricSparkline","metricName":"API P99","currentValue":"42ms","threshold":{"warn":50.0,"critical":100.0},"annotations":[{"tag":"deploy-v2","note":"Canary rollout"},{"tag":"autoscale","note":"HPA +2 pods"}]}]}}""",
             )
         verifyStreamHasZeroErrors(
-            streamName = "NestedAndNestedListProperties_CL4390685",
+            streamName = "NestedObjectAndNestedObjectListProperties_CL4390685",
             catalogs = listOf(catalog),
             lines = nestedPayloadStream,
+        )
+
+        // 6. Verify upstream A2uiOpenUrlFunction native scheme enforcement (merged CL 4346347)
+        val nativeOpenUrlFn =
+            androidx.a2ui.model.catalog.functions.A2uiOpenUrlFunction { url ->
+                openedUrls.add(url)
+            }
+        var nativeRejectedJavascript = false
+        try {
+            nativeOpenUrlFn.execute(mapOf("url" to "javascript:alert(1)"), dummyExecutionContext)
+        } catch (e: androidx.a2ui.model.protocol.A2uiException.A2uiRuntimeException) {
+            nativeRejectedJavascript =
+                e.message?.contains("unsupported URL scheme 'javascript'") == true
+        }
+        assertTrue(
+            "Expected upstream A2uiOpenUrlFunction to reject javascript: scheme",
+            nativeRejectedJavascript,
         )
 
         val attributedError =

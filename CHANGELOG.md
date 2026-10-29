@@ -4,9 +4,26 @@
 
 ---
 
+## [2026-10-29] AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16760077`) 최신 머지 변경사항 반영
+
+AOSP `androidx-main`에 최종 머지된 `CL 4390685` (Rev 10, *"Address API council feedback on the A2UI Compose runtime APIs"*) 및 `CL 4346347` (Rev 3, *"Only open http, https, mailto and tel URLs in A2UI openUrl"*)을 스키마, 컴포넌트, 테스트 스위트에 반영했습니다.
+
+### 1. API Council 피드백 최종 명칭 변경 반영: `nestedObject`, `nestedObjectList`, `dynamicAny` (`CL 4390685` Merged)
+- **배경**:
+  - `CL 4390685` 최종 머지본(Rev 10)에서 모든 `A2uiProperty` 팩토리 메서드가 해석되는 코틀린 타입과 일관된 명칭을 갖도록:
+    - `A2uiProperty.dynamicValue` → `A2uiProperty.dynamicAny`
+    - `A2uiProperty.nested` → `A2uiProperty.nestedObject`
+    - `A2uiProperty.nestedList` → `A2uiProperty.nestedObjectList` (`nestedList`가 중첩 리스트로 오독되는 문제를 해결하고 중첩 객체의 리스트임을 명시)
+    로 최종 변경되어 `androidx-main` (`16760077`)에 머지됨.
+- **적용 내역**:
+  - `MetricSparklineSchema.kt`의 `thresholdProperty`를 `A2uiProperty.nestedObject("threshold", ...)`로, `annotationsProperty`를 `A2uiProperty.nestedObjectList("annotations", ...)`로 업데이트.
+  - `A2uiPayloadsVerificationTest.kt`에서 `A2uiProperty.dynamicAny`, `A2uiProperty.nestedObject`, `A2uiProperty.nestedObjectList`, 그리고 업스트림 `A2uiOpenUrlFunction` 네이티브 스킴 차단을 직접 검증하는 테스트 추가.
+
+---
+
 ## [2026-10-26] AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16723761`) & AGP `9.4.1` 최신 변경사항 반영
 
-Android Gradle Plugin(AGP) `9.4.1` 업그레이드 및 AOSP `androidx-main` / Gerrit 최신 변경사항(`CL 4390685`, `CL 4389525`–`4389533`)을 커스텀 컴포넌트 스키마, 카오스 몽키 Lab, 테스트 스위트에 반영했습니다.
+Android Gradle Plugin(AGP) `9.4.1` 업그레이드 및 AOSP `androidx-main` / Gerrit 최신 변경사항(`CL 4390685`, `CL 4389525`~`4389533`)을 커스텀 컴포넌트 스키마, 카오스 몽키 Lab, 테스트 스위트에 반영했습니다.
 
 ### 1. `A2uiComponent` Total `Content` 및 `isReady` 게이트 계약 정렬 (`CL 4389525`, `CL 4390685`)
 - **배경**:
