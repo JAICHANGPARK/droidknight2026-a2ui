@@ -69,7 +69,7 @@ object A2uiGeminiApiClient {
         return if (overrideModel.isNotEmpty()) {
             overrideModel
         } else {
-            BuildConfig.GEMINI_MODEL.trim().ifEmpty { "gemini-2.5-flash" }
+            BuildConfig.GEMINI_MODEL.trim().ifEmpty { "gemini-3.8-flash" }
         }
     }
 
@@ -77,7 +77,7 @@ object A2uiGeminiApiClient {
         context
             .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
-            .putString(KEY_MODEL, modelName.trim().ifEmpty { "gemini-2.5-flash" })
+            .putString(KEY_MODEL, modelName.trim().ifEmpty { "gemini-3.8-flash" })
             .apply()
     }
 
@@ -326,8 +326,17 @@ object A2uiGeminiApiClient {
             }
         }
 
-        require(extractedJsonl.isNotEmpty()) {
-            "Gemini 응답에서 유효한 A2UI v0.9.1 JSONL 메시지를 찾지 못했습니다."
+        val nonJsonLines =
+            cleanedLines.filterNot { it.startsWith("{") && it.endsWith("}") }
+        if (extractedJsonl.isEmpty() && agentReply.isBlank() && nonJsonLines.isNotEmpty()) {
+            agentReply =
+                nonJsonLines.joinToString("\n") {
+                    it.removePrefix("REPLY:").removePrefix("reply:").trim()
+                }
+        }
+
+        require(extractedJsonl.isNotEmpty() || agentReply.isNotBlank()) {
+            "Gemini 응답에서 유효한 텍스트 또는 A2UI v0.9.1 JSONL 메시지를 찾지 못했습니다."
         }
 
         val finalReply =
@@ -382,9 +391,12 @@ object A2uiGeminiApiClient {
     private fun buildCurrencyExchangeSystemPrompt(catalogSchema: String): String =
         """
         당신은 DroidKnights 2026 모바일 금융 슈퍼앱 AI 비서입니다.
-        사용자의 자연어 금융 문의(외화 환전, 간편 송금·이체, 카드 명세서 조회 및 즉시결제, 해외출국 환전·카드·보험 3종 패키지 등)를 분석하여:
-        1) 첫 줄에 `REPLY: <한국어 안내 메시지 1~2문장>`을 출력하고,
-        2) 이어서 반드시 아래 A2UI v0.9.1 JSONL 규격의 단일 라인 JSON 객체 3줄(`createSurface`, `updateDataModel`, `updateComponents`)만 출력하세요. 마크다운 코드블록(```)은 사용하지 마세요.
+        사용자의 입력 의도에 따라 아래 두 가지 방식 중 하나로 응답하세요:
+        - [A. 일반 대화·단순 정보 질문인 경우] (예: 인사, 오늘 환율 질문, 우대율·수수료 질문, 공항 수령 위치·준비물 질문 등 폼 조작이 아직 필요 없는 질문):
+          JSONL 없이 `REPLY: <친절하고 구체적인 한국어 텍스트 답변>`만 출력하세요. (JPY 기준환율 100엔당 904.12원·90% 우대, USD 1,384.50원, EUR 1,492.10원, CHF 1,568.00원)
+        - [B. 금융 실행·조작·신청·내역조회 요청인 경우] (예: 외화 환전 신청, 간편 송금·이체, 카드 명세서 즉시결제, 해외출국 3종 패키지, 통장사본 발급 등):
+          1) 첫 줄에 `REPLY: <한국어 안내 메시지 1~2문장>`을 출력하고,
+          2) 이어서 반드시 아래 A2UI v0.9.1 JSONL 규격의 단일 라인 JSON 객체 3줄(`createSurface`, `updateDataModel`, `updateComponents`)만 출력하세요. 마크다운 코드블록(```)은 사용하지 마세요.
 
         [필수 규칙]
         - surfaceId는 반드시 `"exchange_surface"`로 고정하세요.

@@ -12,7 +12,8 @@ captures/
 *.aab
 
 # Local-only presentation & handoff docs (never pushed to public GitHub)
-slides/
+slides/*
+!slides/droidknights-2026.css
 presentation/
 SESSION_HANDOFF.md
 *.pptx

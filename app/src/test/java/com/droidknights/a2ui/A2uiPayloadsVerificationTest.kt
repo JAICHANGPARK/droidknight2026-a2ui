@@ -549,6 +549,60 @@ class A2uiPayloadsVerificationTest {
         assertTrue(attributedError.message?.contains("CircularClimateDial min") == true)
         assertEquals("min", attributedError.context["path"])
     }
+
+    @Test
+    fun verifyBankingAppState_liveTransactionsAndBalanceUpdates() {
+        val state = com.droidknights.a2ui.common.BankingAppState()
+        assertEquals(31_520_000L, state.mainAccountBalance)
+        assertEquals(2_161_314L, state.cardStatementBalance)
+        assertEquals(4, state.transactions.size)
+
+        // 1. Exchange 50,000 JPY (452,060 KRW) -> deducts balance, issues QR voucher, prepends transaction
+        val voucher =
+            state.recordCurrencyExchange(
+                currency = "JPY",
+                foreignAmount = 50_000L,
+                krwAmount = 452_060L,
+                branchLabel = "인천공항 1터미널",
+            )
+        assertEquals(31_520_000L - 452_060L, state.mainAccountBalance)
+        assertEquals(1, state.exchangeVouchers.size)
+        assertEquals("QR-EX-2026-8492", voucher.voucherCode)
+        assertEquals(5, state.transactions.size)
+
+        // 2. Transfer 240,000 KRW to 박우리
+        state.recordTransfer(recipient = "박우리", amount = 240_000L, memo = "모임회비")
+        assertEquals(31_520_000L - 452_060L - 240_000L, state.mainAccountBalance)
+        assertEquals(6, state.transactions.size)
+
+        // 3. Pay Card Bill with 10,000P points
+        val paidCash = state.recordCardBillPayment(payAmount = 2_161_314L, usePoints = true)
+        assertEquals(2_151_314L, paidCash)
+        assertEquals(0L, state.cardStatementBalance)
+        assertEquals(0L, state.rewardPoints)
+
+        // 4. Reset demo state restores initial balance
+        state.resetToInitial()
+        assertEquals(31_520_000L, state.mainAccountBalance)
+        assertEquals(2_161_314L, state.cardStatementBalance)
+        assertTrue(state.exchangeVouchers.isEmpty())
+
+        // 5. Conversational text Q&A vs Actionable A2UI surface classification
+        val rateAnswer =
+            com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
+                .buildConversationalTextReplyIfPureQuestion("오늘 엔화랑 달러 환율 얼마야?", state)
+        assertTrue("Rate inquiry should return a pure text answer", rateAnswer != null && rateAnswer.contains("904.12원"))
+
+        val balanceAnswer =
+            com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
+                .buildConversationalTextReplyIfPureQuestion("지금 내 통장 잔액 얼마 남았어?", state)
+        assertTrue("Balance inquiry should return live balance in text", balanceAnswer != null && balanceAnswer.contains("31,520,000원"))
+
+        val exchangeAction =
+            com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
+                .buildConversationalTextReplyIfPureQuestion("인천공항 1터미널 수령으로 5만 엔 환전해 줘.", state)
+        assertEquals("Actionable exchange request should return null to trigger A2UI surface", null, exchangeAction)
+    }
 }
 
 

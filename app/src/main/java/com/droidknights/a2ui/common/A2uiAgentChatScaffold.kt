@@ -52,9 +52,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import java.text.NumberFormat
+import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,6 +78,12 @@ data class AgentPromptPreset(
     val userPromptText: String,
     val agentIntroText: String,
     val schemaBadge: String,
+)
+
+internal data class ArchivedChatTurn(
+    val userMessage: String,
+    val agentReply: String,
+    val actionSummary: String?,
 )
 
 enum class A2uiComparisonDisplayMode(val label: String) {
@@ -413,6 +423,7 @@ fun A2uiAgentChatScaffold(
     streamingStatusText: String? = null,
     isStreaming: Boolean = false,
     expectedJsonlCount: Int = 3,
+    conversationalQuestions: List<Pair<String, String>> = emptyList(),
     onUserSendPrompt: ((String) -> Unit)? = null,
     onNavigateBack: (() -> Unit)? = null,
     extraHeaderControls: (@Composable () -> Unit)? = null,
@@ -423,6 +434,9 @@ fun A2uiAgentChatScaffold(
     val activePreset = prompts.getOrElse(selectedPromptIndex) { prompts.first() }
     val windowLayoutInfo = rememberA2uiWindowLayoutInfo()
     val initialModeOverride = LocalInitialComparisonMode.current
+    val bankingState = LocalBankingAppState.current
+    val fmt = remember { NumberFormat.getNumberInstance(Locale.KOREA) }
+    val isBankingScenario = scenarioTitle.contains("금융") || scenarioTitle.contains("환전")
 
     var userOverriddenModeName by rememberSaveable(initialModeOverride) {
         mutableStateOf(initialModeOverride?.name)
@@ -441,11 +455,35 @@ fun A2uiAgentChatScaffold(
     var customSubmittedMessage by rememberSaveable {
         mutableStateOf<String?>(null)
     }
+    val hasActiveUserTurn = selectedPromptIndex >= 0 || customSubmittedMessage != null
     val displayedUserMessage = customSubmittedMessage ?: activePreset.userPromptText
     var chatTurnCounter by rememberSaveable { mutableIntStateOf(0) }
+    val archivedTurns = remember { mutableStateListOf<ArchivedChatTurn>() }
 
     val sendPromptMessage: (String, Int?) -> Unit = { promptText, targetIdx ->
         val finalPrompt = promptText.trim().ifBlank { activePreset.userPromptText }
+        // Archive the current turn into conversation history ONLY if a user turn was already active
+        if (hasActiveUserTurn) {
+            val currentEventMessages = outboundLog.filterIsInstance<A2uiClientEventMessage>()
+            val completedSummary =
+                if (currentEventMessages.isNotEmpty()) {
+                    currentEventMessages.joinToString(" → ") { it.type } +
+                        (agentActionReplies.lastOrNull()?.let { " · $it" } ?: "")
+                } else {
+                    null
+                }
+            archivedTurns.add(
+                ArchivedChatTurn(
+                    userMessage = displayedUserMessage,
+                    agentReply = agentIntroOverride ?: activePreset.agentIntroText,
+                    actionSummary = completedSummary,
+                )
+            )
+            if (archivedTurns.size > 8) {
+                archivedTurns.removeAt(0)
+            }
+        }
+
         customInputText = ""
         chatTurnCounter += 1
         if (targetIdx != null) {
@@ -509,13 +547,35 @@ fun A2uiAgentChatScaffold(
                             Text(text = "🤖", style = MaterialTheme.typography.titleSmall)
                         }
                     }
-                    Text(
-                        text = "AI 챗봇",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Column {
+                        val headerTitle =
+                            when {
+                                displayMode == A2uiComparisonDisplayMode.AS_IS_LEGACY_APP && isBankingScenario ->
+                                    "외화 환전 (기존 7단계)"
+                                displayMode == A2uiComparisonDisplayMode.AS_IS_LEGACY_APP ->
+                                    "$scenarioTitle (기존 방식)"
+                                isBankingScenario ->
+                                    "AI 금융비서"
+                                else ->
+                                    "AI 에이전트 · $scenarioTitle"
+                            }
+                        Text(
+                            text = headerTitle,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (isBankingScenario) {
+                            Text(
+                                text = "DK 주거래 잔액 ${fmt.format(bankingState.mainAccountBalance)}원",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                            )
+                        }
+                    }
                 }
 
                 Row(
@@ -625,61 +685,132 @@ fun A2uiAgentChatScaffold(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    // Turn 1: User's natural language chat bubble
-                    ChatBubble(
-                        text = displayedUserMessage,
-                        fromUser = true,
-                    )
-
-                    // Turn 2: Agent's response bubble
-                    ChatBubble(
-                        text =
-                            if (eventMessages.isNotEmpty() && agentActionReplies.isNotEmpty()) {
-                                agentActionReplies.last()
-                            } else {
-                                agentIntroOverride ?: activePreset.agentIntroText
-                            },
-                        fromUser = false,
-                        senderLabel = "AI 금융비서",
-                    )
-
-                    // Subtle Streaming Progress Banner (shown ONLY while streaming)
-                    if (isStreaming) {
-                        val currentStepCount = jsonlStream.size.coerceAtMost(expectedJsonlCount)
-                        val statusLabel =
-                            streamingStatusText
-                                ?: "📡 A2UI 스트리밍 중 ($currentStepCount/$expectedJsonlCount)..."
-                        Surface(
-                            color = MaterialTheme.colorScheme.tertiaryContainer,
-                            shape = RoundedCornerShape(10.dp),
+                    // Prior Archived Conversation Turns (Multi-turn Messenger History)
+                    if (archivedTurns.isNotEmpty()) {
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
+                            Text(
+                                text = "이전 대화 내역 (${archivedTurns.size}건)",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            TextButton(onClick = { archivedTurns.clear() }) {
                                 Text(
-                                    text = statusLabel,
+                                    text = "대화 지우기",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    fontWeight = FontWeight.SemiBold,
                                 )
-                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                             }
                         }
-                    }
-
-                    outboundLog.filterIsInstance<A2uiClientErrorMessage>().forEach { msg ->
-                        Text(
-                            text = "⚠️ ${msg.code}: ${msg.message}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
+                        archivedTurns.forEach { pastTurn ->
+                            ChatBubble(
+                                text = pastTurn.userMessage,
+                                fromUser = true,
+                            )
+                            ChatBubble(
+                                text = pastTurn.agentReply,
+                                fromUser = false,
+                                senderLabel = if (isBankingScenario) "AI 금융비서" else "AI 에이전트",
+                            )
+                            if (!pastTurn.actionSummary.isNullOrBlank()) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.align(Alignment.End),
+                                ) {
+                                    Text(
+                                        text = "✓ 완료된 액션: ${pastTurn.actionSummary}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    )
+                                }
+                            }
+                        }
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
                         )
                     }
 
-                    // Live inline A2uiSurface rendered inside the Agent's chat flow
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        surfaceContent()
+                    if (!hasActiveUserTurn) {
+                        // Initial Welcome Text Chat Greeting (Before user sends any message)
+                        ChatBubble(
+                            text =
+                                agentIntroOverride
+                                    ?: ("안녕하세요 박제창님! DK AI 금융비서입니다 😊\n\n" +
+                                        "일반 텍스트 대화처럼 무엇이든 물어보시거나, 환전·송금·카드결제를 바로 요청해 보세요.\n" +
+                                        "• 💬 일반 질문: \"오늘 엔화 환율 얼마야?\", \"내 통장 잔액 알려줘\", \"공항 수령 어디서 해?\"\n" +
+                                        "• ⚡ A2UI 실행: \"인천공항 1터미널 수령으로 5만 엔 환전해 줘\", \"박우리님께 24만 원 보내 줘\""),
+                            fromUser = false,
+                            senderLabel = if (isBankingScenario) "AI 금융비서" else "AI 에이전트",
+                        )
+                    } else {
+                        // Turn 1: User's natural language chat bubble
+                        ChatBubble(
+                            text = displayedUserMessage,
+                            fromUser = true,
+                        )
+
+                        // Turn 2: Agent's initial response bubble
+                        ChatBubble(
+                            text = agentIntroOverride ?: activePreset.agentIntroText,
+                            fromUser = false,
+                            senderLabel = if (isBankingScenario) "AI 금융비서" else "AI 에이전트",
+                        )
+
+                        // Turn 3+: Dispatched A2UI User Actions + Dereferenced DataModel + Agent Follow-up Replies
+                        eventMessages.forEachIndexed { idx, eventMsg ->
+                            DispatchedDataModelEventCard(
+                                event = eventMsg,
+                                stepIndex = idx + 1,
+                                priorEvents = eventMessages.take(idx),
+                                agentReply = agentActionReplies.getOrNull(idx),
+                            )
+                        }
+
+                        // Interceptor Audit Logs & Issued Voucher Tickets
+                        extraTimelineBanners?.invoke()
+
+                        // Subtle Streaming Progress Banner (shown ONLY while streaming)
+                        if (isStreaming) {
+                            val currentStepCount = jsonlStream.size.coerceAtMost(expectedJsonlCount)
+                            val statusLabel =
+                                streamingStatusText
+                                    ?: "📡 A2UI 스트리밍 중 ($currentStepCount/$expectedJsonlCount)..."
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    Text(
+                                        text = statusLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                }
+                            }
+                        }
+
+                        outboundLog.filterIsInstance<A2uiClientErrorMessage>().forEach { msg ->
+                            Text(
+                                text = "⚠️ ${msg.code}: ${msg.message}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+
+                        // Live inline A2uiSurface rendered inside the Agent's chat flow
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            surfaceContent()
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -697,7 +828,7 @@ fun A2uiAgentChatScaffold(
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        // Quick Prompt Suggestion Chips Row
+                        // Quick Prompt Suggestion Chips Row (Conversational Text Q&A + A2UI Action Presets)
                         Row(
                             modifier =
                                 Modifier.fillMaxWidth()
@@ -705,15 +836,28 @@ fun A2uiAgentChatScaffold(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
+                            conversationalQuestions.forEach { (chipLabel, fullQuestion) ->
+                                AssistChip(
+                                    onClick = {
+                                        sendPromptMessage(fullQuestion, null)
+                                    },
+                                    label = {
+                                        Text(
+                                            text = chipLabel,
+                                            style = MaterialTheme.typography.labelSmall,
+                                        )
+                                    },
+                                )
+                            }
                             prompts.forEachIndexed { index, preset ->
-                                val isSelected = selectedPromptIndex == index
+                                val isSelected = selectedPromptIndex == index && customSubmittedMessage == null
                                 SuggestionChip(
                                     onClick = {
                                         sendPromptMessage(preset.userPromptText, index)
                                     },
                                     label = {
                                         Text(
-                                            text = preset.shortChipLabel,
+                                            text = "⚡ ${preset.shortChipLabel}",
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight =
                                                 if (isSelected) FontWeight.Bold

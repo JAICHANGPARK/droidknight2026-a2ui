@@ -39,6 +39,10 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
+import com.droidknights.a2ui.common.ExchangeVoucherQrTicketCard
+import com.droidknights.a2ui.common.LocalBankingAppState
+import java.text.NumberFormat
+import java.util.Locale
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -97,6 +101,8 @@ sealed interface ExchangeLegacyNavKey : NavKey {
 
 @Composable
 fun LegacyCurrencyExchangeScreen() {
+    val bankingState = LocalBankingAppState.current
+    val fmt = androidx.compose.runtime.remember { NumberFormat.getNumberInstance(Locale.KOREA) }
     val navBackStack = rememberNavBackStack(ExchangeLegacyNavKey.Step1BankMenu)
     val currentStep = (navBackStack.lastOrNull() as? ExchangeLegacyNavKey) ?: ExchangeLegacyNavKey.Step1BankMenu
     var touchCount by rememberSaveable { mutableIntStateOf(0) }
@@ -487,6 +493,15 @@ fun LegacyCurrencyExchangeScreen() {
 
                             entry<ExchangeLegacyNavKey.Step7AccountPin> {
                                 val isPinValid = accountPin.length == 4
+                                val ratePerUnit =
+                                    when {
+                                        selectedCurrency.startsWith("JPY") -> 9.0412f
+                                        selectedCurrency.startsWith("USD") -> 1384.5f
+                                        selectedCurrency.startsWith("EUR") -> 1492.1f
+                                        else -> 1568.0f
+                                    }
+                                val krwCost = (exchangeAmount * ratePerUnit).toLong()
+                                val currencyCode = selectedCurrency.take(3)
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Text(
                                         text = "계좌 비밀번호 입력",
@@ -494,7 +509,7 @@ fun LegacyCurrencyExchangeScreen() {
                                         fontWeight = FontWeight.SemiBold,
                                     )
                                     Text(
-                                        text = "$selectedCurrency ${exchangeAmount.toInt()} · $selectedBranch",
+                                        text = "$selectedCurrency ${fmt.format(exchangeAmount.toLong())} (출금 ${fmt.format(krwCost)}원) · $selectedBranch",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -524,6 +539,13 @@ fun LegacyCurrencyExchangeScreen() {
                                     Button(
                                         onClick = {
                                             touchCount++
+                                            bankingState.recordCurrencyExchange(
+                                                currency = currencyCode,
+                                                foreignAmount = exchangeAmount.toLong(),
+                                                krwAmount = krwCost,
+                                                branchLabel = selectedBranch,
+                                                pickupMethodLabel = "모바일 QR 바우처 (7단계 신청)",
+                                            )
                                             navBackStack.add(ExchangeLegacyNavKey.Completed)
                                         },
                                         enabled = isPinValid,
@@ -535,6 +557,7 @@ fun LegacyCurrencyExchangeScreen() {
                             }
 
                             entry<ExchangeLegacyNavKey.Completed> {
+                                val latestVoucher = bankingState.exchangeVouchers.firstOrNull()
                                 Card(
                                     colors =
                                         CardDefaults.cardColors(
@@ -553,10 +576,19 @@ fun LegacyCurrencyExchangeScreen() {
                                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                                         )
                                         Text(
-                                            text = "$selectedCurrency ${exchangeAmount.toInt()} · $selectedBranch",
+                                            text = "$selectedCurrency ${fmt.format(exchangeAmount.toLong())} · $selectedBranch",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                                         )
+                                        Text(
+                                            text = "출금 후 주거래 통장 잔액: ${fmt.format(bankingState.mainAccountBalance)}원",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                        if (latestVoucher != null) {
+                                            ExchangeVoucherQrTicketCard(voucher = latestVoucher)
+                                        }
                                         OutlinedButton(
                                             onClick = {
                                                 touchCount = 0

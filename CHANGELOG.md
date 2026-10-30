@@ -4,19 +4,20 @@
 
 ---
 
-## [2026-10-29] AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16760077`) 최신 머지 변경사항 반영
+## [2026-10-30] AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16770660`) 최신 머지 변경사항 반영
 
-AOSP `androidx-main`에 최종 머지된 `CL 4390685` (Rev 10, *"Address API council feedback on the A2UI Compose runtime APIs"*) 및 `CL 4346347` (Rev 3, *"Only open http, https, mailto and tel URLs in A2UI openUrl"*)을 스키마, 컴포넌트, 테스트 스위트에 반영했습니다.
+AOSP `androidx-main` 최신 스냅샷(Build `16770660`) 및 최종 머지된 `CL 4390685` (Rev 10, `8988cf973ec`, *"Address API council feedback on the A2UI Compose runtime APIs"*), `CL 4346347` (Rev 3, `0c64eb99618`, *"Only open http, https, mailto and tel URLs in A2UI openUrl"*)의 공식 샘플 계약(`compose-runtime-samples`)을 스키마, 컴포넌트, 테스트 스위트에 반영했습니다.
 
-### 1. API Council 피드백 최종 명칭 변경 반영: `nestedObject`, `nestedObjectList`, `dynamicAny` (`CL 4390685` Merged)
+### 1. API Council 피드백 최종 명칭 변경 및 중첩 프로퍼티 `isReady` 게이트 (`CL 4390685` / `8988cf973ec`)
 - **배경**:
   - `CL 4390685` 최종 머지본(Rev 10)에서 모든 `A2uiProperty` 팩토리 메서드가 해석되는 코틀린 타입과 일관된 명칭을 갖도록:
     - `A2uiProperty.dynamicValue` → `A2uiProperty.dynamicAny`
     - `A2uiProperty.nested` → `A2uiProperty.nestedObject`
     - `A2uiProperty.nestedList` → `A2uiProperty.nestedObjectList` (`nestedList`가 중첩 리스트로 오독되는 문제를 해결하고 중첩 객체의 리스트임을 명시)
-    로 최종 변경되어 `androidx-main` (`16760077`)에 머지됨.
+    로 최종 변경되어 `androidx-main` (`16770660`)에 머지됨.
+  - 신규 추가된 공식 샘플 모듈(`a2ui:compose:compose-runtime:compose-runtime-samples`의 `A2uiPropertyNestedObjectListSample`)에서 `nestedObjectList` 내부에 동적 필수 프로퍼티가 있을 때 `isReady`에서 `items.all { item -> item.bind(requiredDynamicProp) != null }`로 모든 하위 항목의 준비 상태를 함께 검증하는 패턴이 정립됨.
 - **적용 내역**:
-  - `MetricSparklineSchema.kt`의 `thresholdProperty`를 `A2uiProperty.nestedObject("threshold", ...)`로, `annotationsProperty`를 `A2uiProperty.nestedObjectList("annotations", ...)`로 업데이트.
+  - `MetricSparklineSchema.kt`의 `thresholdProperty`를 `A2uiProperty.nestedObject("threshold", ...)`로, `annotationsProperty`를 `A2uiProperty.nestedObjectList("annotations", ...)`로 업데이트하고, `isReady(properties)`에서 `annotations.all { it.bind(annotationTagProperty) != null }` 검증 추가.
   - `A2uiPayloadsVerificationTest.kt`에서 `A2uiProperty.dynamicAny`, `A2uiProperty.nestedObject`, `A2uiProperty.nestedObjectList`, 그리고 업스트림 `A2uiOpenUrlFunction` 네이티브 스킴 차단을 직접 검증하는 테스트 추가.
 
 ---

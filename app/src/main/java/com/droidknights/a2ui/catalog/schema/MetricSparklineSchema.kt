@@ -36,8 +36,12 @@ interface MetricSparklineSchema : A2uiComponent {
 
     @Composable
     override fun A2uiComponentScope.isReady(properties: A2uiComponentProperties): Boolean {
+        val annotations = properties[annotationsProperty]
+        val annotationsReady =
+            annotations == null || annotations.all { it.bind(annotationTagProperty) != null }
         return properties.bind(metricNameProperty) != null &&
-            properties.bind(currentValueProperty) != null
+            properties.bind(currentValueProperty) != null &&
+            annotationsReady
     }
 
     @Composable

@@ -3,6 +3,7 @@ package com.droidknights.a2ui.scenarios.payloads
 import androidx.a2ui.model.protocol.A2uiClientEventMessage
 import com.droidknights.a2ui.catalog.DroidKnightsCatalogs
 import com.droidknights.a2ui.common.AgentPromptPreset
+import com.droidknights.a2ui.common.BankingAppState
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -67,6 +68,167 @@ object CurrencyExchangePayloads {
                 schemaBadge = "exchange_surface · /ledger/filterMode",
             ),
         )
+
+    /**
+     * Quick text-only question chips that demonstrate standard text Q&A before/alongside A2UI surfaces.
+     */
+    val conversationalSampleQuestions: List<Pair<String, String>> =
+        listOf(
+            "💬 오늘 환율 얼마야?" to "오늘 엔화랑 달러 환율 얼마야?",
+            "💬 내 통장 잔액은?" to "지금 내 주거래 통장 잔액이랑 최근 거래 알려줘.",
+            "💬 공항 수령 어디서 해?" to "인천공항에서 환전한 돈 어디서 수령해?",
+        )
+
+    /**
+     * Returns a natural Korean text reply if the user's message is a conversational or informational
+     * question (greeting, exchange rate inquiry, balance inquiry, airport pickup guide, etc.)
+     * that does NOT yet request an interactive A2UI execution form.
+     * Returns `null` when the user requests an actionable banking task (exchange, transfer, bill pay, etc.).
+     */
+    fun buildConversationalTextReplyIfPureQuestion(
+        userQuery: String,
+        bankingState: BankingAppState,
+    ): String? {
+        val trimmed = userQuery.trim()
+        val q = trimmed.lowercase()
+        val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
+
+        val hasExplicitActionIntent =
+            q.contains("환전해") ||
+                q.contains("환전할") ||
+                q.contains("환전 신청") ||
+                q.contains("바꿔") ||
+                q.contains("보내") ||
+                q.contains("송금해") ||
+                q.contains("송금할") ||
+                q.contains("이체해") ||
+                q.contains("즉시결제") ||
+                q.contains("결제할") ||
+                q.contains("결제해") ||
+                q.contains("켜 줘") ||
+                q.contains("켜줘") ||
+                q.contains("걸어 줘") ||
+                q.contains("걸어줘") ||
+                q.contains("예약해") ||
+                q.contains("재환전") ||
+                q.contains("사본") ||
+                q.contains("소액권") ||
+                q.contains("3종") ||
+                Regex("""\d+\s*(만\s*엔|엔|달러|usd|jpy|유로|만\s*원|원)""").containsMatchIn(q)
+
+        if (hasExplicitActionIntent) {
+            return null
+        }
+
+        // 1. 인사 / 자기소개 / 도움말
+        if (
+            q.contains("안녕") ||
+                q.contains("반가") ||
+                q.contains("누구") ||
+                q.contains("도움") ||
+                q.contains("뭐 할 수") ||
+                q.contains("무엇을") ||
+                q.contains("기능") ||
+                q == "하이" ||
+                q == "hi" ||
+                q == "hello"
+        ) {
+            return "안녕하세요 박제창님! DK 금융 슈퍼앱 AI 금융비서입니다 😊\n\n" +
+                "일반 텍스트 질문과 실시간 A2UI 실행 화면 생성을 모두 도와드릴 수 있어요.\n" +
+                "• 💬 텍스트 질문: \"오늘 엔화 환율 얼마야?\", \"내 통장 잔액 얼마야?\", \"인천공항 수령은 어디서 해?\"\n" +
+                "• ⚡ A2UI 실행 요청: \"인천공항 1터미널 수령으로 5만 엔 환전해 줘\", \"박우리님께 24만 원 보내 줘\", \"11월 카드 명세서 즉시결제할래\""
+        }
+
+        // 2. 환율 / 시세 / 우대율 / 수수료 질문
+        if (
+            q.contains("환율") ||
+                q.contains("시세") ||
+                q.contains("우대") ||
+                q.contains("수수료") ||
+                q.contains("엔화 얼마") ||
+                q.contains("달러 얼마") ||
+                q.contains("유로 얼마")
+        ) {
+            return "📈 현재 DK 뱅크 실시간 환율 안내 (VVIP 우대 적용 기준)\n\n" +
+                "• 🇯🇵 일본 엔 (JPY 100): 904.12원 (90% 환율 우대)\n" +
+                "• 🇺🇸 미국 달러 (USD 1): 1,384.50원 (90% 환율 우대)\n" +
+                "• 🇪🇺 유럽 유로 (EUR 1): 1,492.10원 (80% 환율 우대)\n" +
+                "• 🇨🇭 스위스 프랑 (CHF 1): 1,568.00원 (80% 환율 우대)\n\n" +
+                "박제창님은 VVIP 등급으로 환전·송금 수수료가 전액 면제됩니다. 바로 환전하시려면 \"인천공항 1터미널 5만 엔 환전해 줘\"처럼 말씀해 주세요!"
+        }
+
+        // 3. 계좌 잔액 / 최근 거래 / 카드값 / 보유 바우처 질문 (단순 질문)
+        if (
+            q.contains("잔액") ||
+                q.contains("얼마 남았") ||
+                q.contains("내 돈") ||
+                q.contains("바우처") ||
+                q.contains("카드값") ||
+                q.contains("최근 거래") ||
+                q.contains("내역 알려")
+        ) {
+            val latestTx = bankingState.transactions.firstOrNull()
+            val latestVoucher = bankingState.exchangeVouchers.firstOrNull()
+            val cardBillText =
+                if (bankingState.cardStatementBalance == 0L) "0원 (납부 완료 ✅)"
+                else "${fmt.format(bankingState.cardStatementBalance)}원"
+
+            return buildString {
+                append("🏦 박제창님의 실시간 금융 자산 브리핑입니다.\n\n")
+                append("• DK 주거래 통장 잔액: ${fmt.format(bankingState.mainAccountBalance)}원\n")
+                append("• 11월 카드 명세서 예정액: $cardBillText\n")
+                append("• 보유 포인트: ${fmt.format(bankingState.rewardPoints)}P\n")
+                if (latestTx != null) {
+                    val sign = if (latestTx.amountDelta > 0) "+" else ""
+                    append("• 최근 거래: ${latestTx.title} ($sign${fmt.format(latestTx.amountDelta)}원 · ${latestTx.dateLabel})\n")
+                }
+                if (latestVoucher != null) {
+                    append(
+                        "• 🎫 보유 환전 바우처: ${latestVoucher.voucherCode} (${fmt.format(latestVoucher.foreignAmount)} ${latestVoucher.currency} · ${latestVoucher.branchLabel})\n"
+                    )
+                }
+                append("\n통장사본 발급이나 상세 필터 조회가 필요하시면 \"입출금 내역이랑 통장사본 보여 줘\"라고 입력해 주세요!")
+            }
+        }
+
+        // 4. 공항 수령 장소 / 방법 / 준비물 질문
+        if (
+            q.contains("어디서") ||
+                q.contains("수령") ||
+                q.contains("위치") ||
+                q.contains("준비물") ||
+                q.contains("여권") ||
+                q.contains("키오스크") ||
+                q.contains("몇 시") ||
+                q.contains("영업시간")
+        ) {
+            return "🛫 인천국제공항 외화 수령 안내\n\n" +
+                "• 제1여객터미널: 3층 출국장 D·J 체크인 카운터 옆 24시간 무인환전기(키오스크) 및 은행 창구\n" +
+                "• 제2여객터미널: 3층 출국장 E 체크인 카운터 옆 24시간 무인환전기\n" +
+                "• 필수 준비물: 본인 실물 여권 + 앱에서 발급된 모바일 QR 바우처\n\n" +
+                "지금 바로 신청하시려면 \"인천공항 1터미널 수령으로 5만 엔 환전해 줘\"라고 말씀해 주세요!"
+        }
+
+        // 5. 그 외 일반 질문 형태 ("~야?", "~인가요?", "~알려줘", "~뭐야", "~어때")
+        if (
+            q.endsWith("?") ||
+                q.contains("얼마") ||
+                q.contains("어떻게") ||
+                q.contains("뭐야") ||
+                q.contains("뭔가요") ||
+                q.contains("알려") ||
+                q.contains("어때") ||
+                q.contains("가능해") ||
+                q.contains("되나요")
+        ) {
+            return "문의하신 \"$trimmed\"에 대한 안내입니다.\n\n" +
+                "현재 박제창님의 DK 주거래 통장 잔액은 ${fmt.format(bankingState.mainAccountBalance)}원이며, " +
+                "외화 환전(JPY·USD·EUR·CHF 90% 우대), 수수료 면제 간편 송금, 11월 카드 명세서 즉시결제, 해외출국 3종 패키지 신청을 즉시 실행하실 수 있습니다.\n" +
+                "실행 화면(A2UI)을 띄우시려면 원하시는 거래와 금액을 말씀해 주세요!"
+        }
+
+        return null
+    }
 
     fun resolvePresetIndexFromUserText(query: String, fallbackIndex: Int): Int {
         val q = query.lowercase()

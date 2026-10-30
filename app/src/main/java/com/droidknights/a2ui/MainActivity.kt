@@ -40,7 +40,9 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.droidknights.a2ui.common.A2uiComparisonDisplayMode
+import com.droidknights.a2ui.common.LocalBankingAppState
 import com.droidknights.a2ui.common.LocalInitialComparisonMode
+import com.droidknights.a2ui.common.rememberBankingAppState
 import com.droidknights.a2ui.labs.CatalogEvolutionLabScreen
 import com.droidknights.a2ui.labs.ChaosMonkeySelfHealingLabScreen
 import com.droidknights.a2ui.labs.Spec10BridgeLabScreen
@@ -90,6 +92,7 @@ class MainActivity : ComponentActivity() {
 fun DroidKnightsA2uiApp(
     startRoute: A2uiTopLevelRoute = A2uiTopLevelRoute.BankingHome,
 ) {
+    val bankingAppState = rememberBankingAppState()
     val topLevelBackStack = rememberTopLevelBackStack(startRoute)
     val twoPaneStrategy = rememberTwoPaneSceneStrategy<A2uiTopLevelRoute>()
     val windowLayoutInfo = rememberA2uiWindowLayoutInfo()
@@ -180,7 +183,10 @@ fun DroidKnightsA2uiApp(
                             .fillMaxHeight()
                             .imePadding(),
                 ) {
-                    CompositionLocalProvider(LocalInitialComparisonMode provides effectiveMode) {
+                    CompositionLocalProvider(
+                        LocalInitialComparisonMode provides effectiveMode,
+                        LocalBankingAppState provides bankingAppState,
+                    ) {
                         NavDisplay(
                             backStack = topLevelBackStack.backStack,
                             onBack = { topLevelBackStack.pop() },
