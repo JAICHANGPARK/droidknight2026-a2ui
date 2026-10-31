@@ -16,6 +16,9 @@ slides/*
 !slides/droidknights-2026.css
 presentation/
 SESSION_HANDOFF.md
+.marprc.yml
+.vscode/
+a2ui_*_metaphor_ko.*
 *.pptx
 *.key
 
