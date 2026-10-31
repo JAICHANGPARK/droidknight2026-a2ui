@@ -102,6 +102,7 @@ fun DroidKnightsA2uiApp(
 
     var selectedBankingPresetIndex by rememberSaveable { mutableIntStateOf(0) }
     var selectedBankingModeName by rememberSaveable { mutableStateOf<String?>(null) }
+    var bankingNavigationGeneration by rememberSaveable { mutableIntStateOf(0) }
     val inheritedMode = LocalInitialComparisonMode.current
     val effectiveMode =
         selectedBankingModeName?.let { name ->
@@ -198,6 +199,7 @@ fun DroidKnightsA2uiApp(
                                             onOpenAiAssistant = { presetIdx, mode ->
                                                 selectedBankingPresetIndex = presetIdx
                                                 selectedBankingModeName = mode.name
+                                                bankingNavigationGeneration += 1
                                                 topLevelBackStack.selectTopLevel(A2uiTopLevelRoute.CurrencyExchange)
                                             },
                                             onOpenAllLabsShowcase = {
@@ -209,14 +211,16 @@ fun DroidKnightsA2uiApp(
                                     entry<A2uiTopLevelRoute.CurrencyExchange>(
                                         metadata = TwoPaneScene.twoPane()
                                     ) {
-                                        CurrencyExchangeDemo(
-                                            initialPresetIndex = selectedBankingPresetIndex,
-                                            onNavigateHome = {
-                                                topLevelBackStack.selectTopLevel(
-                                                    A2uiTopLevelRoute.BankingHome
-                                                )
-                                            },
-                                        )
+                                        androidx.compose.runtime.key(bankingNavigationGeneration) {
+                                            CurrencyExchangeDemo(
+                                                initialPresetIndex = selectedBankingPresetIndex,
+                                                onNavigateHome = {
+                                                    topLevelBackStack.selectTopLevel(
+                                                        A2uiTopLevelRoute.BankingHome
+                                                    )
+                                                },
+                                            )
+                                        }
                                     }
                                 entry<A2uiTopLevelRoute.IncidentCommander>(
                                     metadata = TwoPaneScene.twoPane()

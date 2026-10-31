@@ -199,7 +199,7 @@ class A2uiPayloadsVerificationTest {
                     mapOf(
                         "currency" to "JPY",
                         "foreignAmount" to 50000,
-                        "krwAmount" to 452060,
+                        "krwAmount" to 423940,
                         "branch" to listOf("ICN_T1"),
                         "incidentId" to "INC-8821",
                         "backupWeight" to 80,
@@ -209,9 +209,11 @@ class A2uiPayloadsVerificationTest {
                     ),
             )
 
-        // 1. Exchange Stage 1 -> Stage 2 -> Stage 3
+        // 1. Exchange Stage 1 -> One-shot Completed + Stage 2/3 compatibility
         val exchangeCatalog = com.droidknights.a2ui.catalog.domains.CurrencyExchangeCatalog.create()
         val exchangeStage1 = com.droidknights.a2ui.scenarios.buildCurrencyExchangeJsonl(0)
+        val (_, exchangeOneShotDone) = com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads.buildOneShotExchangeCompletedJsonl(dummyEvent)
+        verifyStreamHasZeroErrors("Exchange_OneShotLoop", listOf(exchangeCatalog), exchangeStage1 + exchangeOneShotDone)
         val (_, exchangeStage2) = com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads.buildFollowUpVoucherStepJsonl(dummyEvent)
         val (_, exchangeStage3) = com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads.buildFinalVoucherIssuedJsonl(dummyEvent)
         verifyStreamHasZeroErrors("Exchange_3StageLoop", listOf(exchangeCatalog), exchangeStage1 + exchangeStage2 + exchangeStage3)
@@ -557,22 +559,22 @@ class A2uiPayloadsVerificationTest {
         assertEquals(2_161_314L, state.cardStatementBalance)
         assertEquals(4, state.transactions.size)
 
-        // 1. Exchange 50,000 JPY (452,060 KRW) -> deducts balance, issues QR voucher, prepends transaction
+        // 1. Exchange 50,000 JPY (423,940 KRW) -> deducts balance, issues QR voucher, prepends transaction
         val voucher =
             state.recordCurrencyExchange(
                 currency = "JPY",
                 foreignAmount = 50_000L,
-                krwAmount = 452_060L,
+                krwAmount = 423_940L,
                 branchLabel = "인천공항 1터미널",
             )
-        assertEquals(31_520_000L - 452_060L, state.mainAccountBalance)
+        assertEquals(31_520_000L - 423_940L, state.mainAccountBalance)
         assertEquals(1, state.exchangeVouchers.size)
         assertEquals("QR-EX-2026-8492", voucher.voucherCode)
         assertEquals(5, state.transactions.size)
 
-        // 2. Transfer 240,000 KRW to 박우리
-        state.recordTransfer(recipient = "박우리", amount = 240_000L, memo = "모임회비")
-        assertEquals(31_520_000L - 452_060L - 240_000L, state.mainAccountBalance)
+        // 2. Transfer 240,000 KRW to 이지훈
+        state.recordTransfer(recipient = "이지훈", amount = 240_000L, memo = "모임회비")
+        assertEquals(31_520_000L - 423_940L - 240_000L, state.mainAccountBalance)
         assertEquals(6, state.transactions.size)
 
         // 3. Pay Card Bill with 10,000P points
@@ -591,7 +593,7 @@ class A2uiPayloadsVerificationTest {
         val rateAnswer =
             com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
                 .buildConversationalTextReplyIfPureQuestion("오늘 엔화랑 달러 환율 얼마야?", state)
-        assertTrue("Rate inquiry should return a pure text answer", rateAnswer != null && rateAnswer.contains("904.12원"))
+        assertTrue("Rate inquiry should return a pure text answer", rateAnswer != null && rateAnswer.contains("847.88원"))
 
         val balanceAnswer =
             com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
@@ -602,6 +604,25 @@ class A2uiPayloadsVerificationTest {
             com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
                 .buildConversationalTextReplyIfPureQuestion("인천공항 1터미널 수령으로 5만 엔 환전해 줘.", state)
         assertEquals("Actionable exchange request should return null to trigger A2UI surface", null, exchangeAction)
+
+        // 6. Custom exchange amount parsing ("6000엔 환전", "3만5천엔 환전", "500달러 환전")
+        val (reply6000, lines6000) =
+            com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
+                .buildDynamicBankingJsonlForQuery("6000엔 환전", 0)
+        assertTrue("Expected 6,000 JPY in reply, got: $reply6000", reply6000.contains("6,000 JPY"))
+        assertTrue("Expected jpyAmount:6000 in DataModel", lines6000[1].contains("\"jpyAmount\":6000"))
+        assertTrue("Expected krwAmount:50873 in DataModel", lines6000[1].contains("\"krwAmount\":50873"))
+        verifyStreamHasZeroErrors(
+            streamName = "CustomQuery_6000Jpy",
+            catalogs = listOf(com.droidknights.a2ui.catalog.domains.CurrencyExchangeCatalog.create()),
+            lines = lines6000,
+        )
+
+        val (replyUsd500, linesUsd500) =
+            com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
+                .buildDynamicBankingJsonlForQuery("500달러 환전해 줘", 0)
+        assertTrue("Expected 500 USD in reply, got: $replyUsd500", replyUsd500.contains("500 USD"))
+        assertTrue("Expected usdAmount:500 in DataModel", linesUsd500[1].contains("\"usdAmount\":500"))
     }
 }
 

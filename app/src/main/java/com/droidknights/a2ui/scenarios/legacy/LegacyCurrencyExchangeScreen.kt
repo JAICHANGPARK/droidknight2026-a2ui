@@ -100,7 +100,9 @@ sealed interface ExchangeLegacyNavKey : NavKey {
 }
 
 @Composable
-fun LegacyCurrencyExchangeScreen() {
+fun LegacyCurrencyExchangeScreen(
+    onNavigateHome: (() -> Unit)? = null,
+) {
     val bankingState = LocalBankingAppState.current
     val fmt = androidx.compose.runtime.remember { NumberFormat.getNumberInstance(Locale.KOREA) }
     val navBackStack = rememberNavBackStack(ExchangeLegacyNavKey.Step1BankMenu)
@@ -224,10 +226,10 @@ fun LegacyCurrencyExchangeScreen() {
                                         fontWeight = FontWeight.SemiBold,
                                     )
                                     listOf(
-                                        "JPY (일본 엔) · 912.40원",
-                                        "USD (미국 달러) · 1,384.50원",
-                                        "EUR (유럽 유로) · 1,492.10원",
-                                        "CHF (스위스 프랑) · 1,568.00원",
+                                        "JPY (일본 엔) · 847.88원",
+                                        "USD (미국 달러) · 1,335.80원",
+                                        "EUR (유럽 유로) · 1,490.75원",
+                                        "CHF (스위스 프랑) · 1,619.05원",
                                     ).forEach { currency ->
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
@@ -262,17 +264,19 @@ fun LegacyCurrencyExchangeScreen() {
                             entry<ExchangeLegacyNavKey.Step3EnterAmount> {
                                 val ratePerUnit =
                                     when {
-                                        selectedCurrency.startsWith("JPY") -> 9.0412f
-                                        selectedCurrency.startsWith("USD") -> 1384.5f
+                                        selectedCurrency.startsWith("JPY") -> 8.4788f
+                                        selectedCurrency.startsWith("USD") -> 1335.8f
                                         selectedCurrency.startsWith("EUR") -> 1492.1f
                                         else -> 1568.0f
                                     }
                                 var foreignInput by rememberSaveable(selectedCurrency) {
-                                    mutableStateOf(exchangeAmount.toInt().toString())
+                                    mutableStateOf(exchangeAmount.toLong().toString())
                                 }
                                 var krwInput by rememberSaveable(selectedCurrency) {
-                                    mutableStateOf((exchangeAmount * ratePerUnit).toInt().toString())
+                                    mutableStateOf((exchangeAmount * ratePerUnit).toLong().toString())
                                 }
+                                val currentKrwCost = krwInput.toLongOrNull() ?: (exchangeAmount * ratePerUnit).toLong()
+                                val isOverBalance = currentKrwCost > bankingState.mainAccountBalance
 
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Text(
@@ -283,13 +287,14 @@ fun LegacyCurrencyExchangeScreen() {
                                     OutlinedTextField(
                                         value = foreignInput,
                                         onValueChange = { raw ->
-                                            val digits = raw.filter { it.isDigit() }.take(9)
+                                            val digits = raw.filter { it.isDigit() }.take(10)
                                             foreignInput = digits
                                             val parsed = digits.toFloatOrNull() ?: 0f
                                             exchangeAmount = parsed
-                                            krwInput = (parsed * ratePerUnit).toInt().toString()
+                                            krwInput = (parsed * ratePerUnit).toLong().toString()
                                             touchCount++
                                         },
+                                        isError = isOverBalance,
                                         label = { Text("환전할 외화 ($selectedCurrency)") },
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true,
@@ -303,14 +308,24 @@ fun LegacyCurrencyExchangeScreen() {
                                             val parsedKrw = digits.toFloatOrNull() ?: 0f
                                             val calcForeign = (parsedKrw / ratePerUnit)
                                             exchangeAmount = calcForeign
-                                            foreignInput = calcForeign.toInt().toString()
+                                            foreignInput = calcForeign.toLong().toString()
                                             touchCount++
                                         },
-                                        label = { Text("출금될 원화 (KRW)") },
+                                        isError = isOverBalance,
+                                        label = { Text("출금될 원화 (KRW) · 잔액 ${fmt.format(bankingState.mainAccountBalance)}원") },
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth(),
                                     )
+                                    if (isOverBalance) {
+                                        Text(
+                                            text =
+                                                "🚫 출금 가능 잔액(${fmt.format(bankingState.mainAccountBalance)}원)을 초과하여 진행할 수 없습니다 (부족: ${fmt.format(currentKrwCost - bankingState.mainAccountBalance)}원).",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Checkbox(
                                             checked = apply90Coupon,
@@ -326,6 +341,7 @@ fun LegacyCurrencyExchangeScreen() {
                                             touchCount++
                                             navBackStack.add(ExchangeLegacyNavKey.Step4PickupBranch)
                                         },
+                                        enabled = currentKrwCost > 0L && !isOverBalance,
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
                                         Text("다음: 수령 지점 선택 (4/7단계)")
@@ -495,13 +511,17 @@ fun LegacyCurrencyExchangeScreen() {
                                 val isPinValid = accountPin.length == 4
                                 val ratePerUnit =
                                     when {
-                                        selectedCurrency.startsWith("JPY") -> 9.0412f
-                                        selectedCurrency.startsWith("USD") -> 1384.5f
+                                        selectedCurrency.startsWith("JPY") -> 8.4788f
+                                        selectedCurrency.startsWith("USD") -> 1335.8f
                                         selectedCurrency.startsWith("EUR") -> 1492.1f
                                         else -> 1568.0f
                                     }
                                 val krwCost = (exchangeAmount * ratePerUnit).toLong()
                                 val currencyCode = selectedCurrency.take(3)
+                                val availableBalance =
+                                    if (selectedAccount.contains("생활비")) bankingState.livingAccountBalance
+                                    else bankingState.mainAccountBalance
+                                val isOverBalance = krwCost > availableBalance
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Text(
                                         text = "계좌 비밀번호 입력",
@@ -513,6 +533,15 @@ fun LegacyCurrencyExchangeScreen() {
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
+                                    if (isOverBalance) {
+                                        Text(
+                                            text =
+                                                "🚫 출금 계좌 잔액(${fmt.format(availableBalance)}원)이 부족하여 환전 신청이 거절됩니다 (부족: ${fmt.format(krwCost - availableBalance)}원).",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
                                     OutlinedTextField(
                                         value = accountPin,
                                         onValueChange = { raw ->
@@ -538,6 +567,7 @@ fun LegacyCurrencyExchangeScreen() {
                                     }
                                     Button(
                                         onClick = {
+                                            if (isOverBalance) return@Button
                                             touchCount++
                                             bankingState.recordCurrencyExchange(
                                                 currency = currencyCode,
@@ -548,16 +578,17 @@ fun LegacyCurrencyExchangeScreen() {
                                             )
                                             navBackStack.add(ExchangeLegacyNavKey.Completed)
                                         },
-                                        enabled = isPinValid,
+                                        enabled = isPinValid && !isOverBalance,
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
-                                        Text("환전 신청 완료")
+                                        Text(if (isOverBalance) "잔액 부족 · 신청 불가" else "환전 신청 완료")
                                     }
                                 }
                             }
 
                             entry<ExchangeLegacyNavKey.Completed> {
                                 val latestVoucher = bankingState.exchangeVouchers.firstOrNull()
+                                val totalVouchers = bankingState.exchangeVouchers.size
                                 Card(
                                     colors =
                                         CardDefaults.cardColors(
@@ -570,7 +601,7 @@ fun LegacyCurrencyExchangeScreen() {
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
                                         Text(
-                                            text = "환전 신청 완료 (7단계 · 터치 ${touchCount}회)",
+                                            text = "환전 신청 완료 (7단계 · 터치 ${touchCount}회 · 누적 바우처 ${totalVouchers}건)",
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.SemiBold,
                                             color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -589,6 +620,18 @@ fun LegacyCurrencyExchangeScreen() {
                                         if (latestVoucher != null) {
                                             ExchangeVoucherQrTicketCard(voucher = latestVoucher)
                                         }
+                                        if (onNavigateHome != null) {
+                                            Button(
+                                                onClick = onNavigateHome,
+                                                modifier = Modifier.fillMaxWidth(),
+                                            ) {
+                                                Text(
+                                                    text =
+                                                        "🏦 은행 홈 화면으로 이동 (잔액: ${fmt.format(bankingState.mainAccountBalance)}원 · 누적 바우처 ${totalVouchers}건)",
+                                                    fontWeight = FontWeight.Bold,
+                                                )
+                                            }
+                                        }
                                         OutlinedButton(
                                             onClick = {
                                                 touchCount = 0
@@ -598,7 +641,7 @@ fun LegacyCurrencyExchangeScreen() {
                                                 }
                                             },
                                         ) {
-                                            Text("처음으로")
+                                            Text("➕ 추가 환전하기 (처음으로)")
                                         }
                                     }
                                 }

@@ -76,6 +76,8 @@ fun BiometricApprovalDialog(
     currentBalance: Long,
 ) {
     val fmt = remember { NumberFormat.getNumberInstance(Locale.KOREA) }
+    val isInsufficientBalance = request.deductionKrw > 0L && request.deductionKrw > currentBalance
+    val shortfall = (request.deductionKrw - currentBalance).coerceAtLeast(0L)
     val afterBalance = (currentBalance - request.deductionKrw).coerceAtLeast(0L)
     var usePinMode by rememberSaveable { mutableStateOf(false) }
     var pinDigits by rememberSaveable { mutableStateOf("") }
@@ -91,19 +93,29 @@ fun BiometricApprovalDialog(
                     modifier =
                         Modifier.size(34.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF1B64DA).copy(alpha = 0.12f)),
+                            .background(
+                                if (isInsufficientBalance) MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
+                                else Color(0xFF1B64DA).copy(alpha = 0.12f)
+                            ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(text = "🔐", fontSize = 18.sp)
+                    Text(text = if (isInsufficientBalance) "🚫" else "🔐", fontSize = 18.sp)
                 }
                 Column {
                     Text(
-                        text = "금융 보안 인증 (ActionInterceptor)",
+                        text =
+                            if (isInsufficientBalance) "잔액 부족 · 거래 거절 (ActionInterceptor)"
+                            else "금융 보안 인증 (ActionInterceptor)",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
+                        color =
+                            if (isInsufficientBalance) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        text = "클라이언트 생체인증 서명 후 에이전트로 전송됩니다",
+                        text =
+                            if (isInsufficientBalance) "보유 계좌 잔액을 초과하여 출금·환전 요청이 거절되었습니다"
+                            else "클라이언트 생체인증 서명 후 에이전트로 전송됩니다",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -148,7 +160,9 @@ fun BiometricApprovalDialog(
                                 text = request.amountLabel,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = Color(0xFF1B64DA),
+                                color =
+                                    if (isInsufficientBalance) MaterialTheme.colorScheme.error
+                                    else Color(0xFF1B64DA),
                             )
                         }
                         if (request.deductionKrw > 0L) {
@@ -157,21 +171,67 @@ fun BiometricApprovalDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
                                 Text(
-                                    text = "출금 후 예상 잔액",
+                                    text = "현재 보유 잔액",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Text(
-                                    text = "${fmt.format(afterBalance)}원",
+                                    text = "${fmt.format(currentBalance)}원",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(
+                                    text = if (isInsufficientBalance) "부족 금액" else "출금 후 예상 잔액",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color =
+                                        if (isInsufficientBalance) MaterialTheme.colorScheme.error
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Text(
+                                    text =
+                                        if (isInsufficientBalance) "-${fmt.format(shortfall)}원 (잔액 부족)"
+                                        else "${fmt.format(afterBalance)}원",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color =
+                                        if (isInsufficientBalance) MaterialTheme.colorScheme.error
+                                        else MaterialTheme.colorScheme.onSurface,
                                 )
                             }
                         }
                     }
                 }
 
-                if (!usePinMode) {
+                if (isInsufficientBalance) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = "🚫 보유 잔액을 초과하여 신청할 수 없습니다.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Text(
+                                text =
+                                    "출금 필요액(${fmt.format(request.deductionKrw)}원)이 현재 출금 가능 잔액(${fmt.format(currentBalance)}원)보다 ${fmt.format(shortfall)}원 많습니다. 금액을 조정한 뒤 다시 신청해 주세요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                        }
+                    }
+                } else if (!usePinMode) {
                     Surface(
                         color = Color(0xFFE8F3FF),
                         shape = RoundedCornerShape(16.dp),
@@ -255,31 +315,47 @@ fun BiometricApprovalDialog(
                     }
                 }
 
-                TextButton(
-                    onClick = {
-                        usePinMode = !usePinMode
-                        pinDigits = ""
-                    },
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                ) {
-                    Text(
-                        text = if (usePinMode) "생체인증(지문)으로 인증하기" else "비밀번호(PIN)로 인증하기",
-                        style = MaterialTheme.typography.labelSmall,
-                    )
+                if (!isInsufficientBalance) {
+                    TextButton(
+                        onClick = {
+                            usePinMode = !usePinMode
+                            pinDigits = ""
+                        },
+                        modifier = Modifier.align(Alignment.CenterHorizontally),
+                    ) {
+                        Text(
+                            text = if (usePinMode) "생체인증(지문)으로 인증하기" else "비밀번호(PIN)로 인증하기",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
                 }
             }
         },
         confirmButton = {
-            Button(
-                onClick = request.onApprove,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B64DA)),
-            ) {
-                Text("생체인증 승인", fontWeight = FontWeight.Bold)
+            if (isInsufficientBalance) {
+                Button(
+                    onClick = request.onCancel,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                        ),
+                ) {
+                    Text("확인 (거래 거절)", fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Button(
+                    onClick = request.onApprove,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B64DA)),
+                ) {
+                    Text("생체인증 승인", fontWeight = FontWeight.Bold)
+                }
             }
         },
         dismissButton = {
-            TextButton(onClick = request.onCancel) {
-                Text("취소")
+            if (!isInsufficientBalance) {
+                TextButton(onClick = request.onCancel) {
+                    Text("취소")
+                }
             }
         },
     )
@@ -422,7 +498,9 @@ fun ExchangeVoucherQrTicketCard(
 fun ExchangeVoucherQrDialog(
     voucher: ExchangeVoucherItem,
     onDismiss: () -> Unit,
+    onCancelVoucher: ((ExchangeVoucherItem) -> Unit)? = null,
 ) {
+    val fmt = remember { NumberFormat.getNumberInstance(Locale.KOREA) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -436,7 +514,7 @@ fun ExchangeVoucherQrDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ExchangeVoucherQrTicketCard(voucher = voucher)
                 Text(
-                    text = "인천공항 환전 키오스크 바코드 리더기에 위 QR 코드를 스캔하고 본인 여권을 인식해 주세요.",
+                    text = "인천공항 환전 키오스크 바코드 리더기에 위 QR 코드를 스캔하고 본인 여권을 인식해 주세요. 수령 전이라면 언제든 환전 신청을 취소하고 출금액(${fmt.format(voucher.krwAmount)}원)을 환불받을 수 있습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -445,6 +523,22 @@ fun ExchangeVoucherQrDialog(
         confirmButton = {
             Button(onClick = onDismiss) {
                 Text("닫기")
+            }
+        },
+        dismissButton = {
+            if (onCancelVoucher != null) {
+                OutlinedButton(
+                    onClick = { onCancelVoucher(voucher) },
+                    colors =
+                        ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        ),
+                ) {
+                    Text(
+                        text = "환전 취소 (${fmt.format(voucher.krwAmount)}원 환불)",
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         },
     )
@@ -712,7 +806,7 @@ fun NativeQuickTransferDialog(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        listOf("박우리" to 240_000L, "김신한" to 120_000L, "이아름" to 80_000L).forEach { (name, presetAmt) ->
+                        listOf("이지훈" to 240_000L, "김민수" to 120_000L, "최유진" to 80_000L).forEach { (name, presetAmt) ->
                             FilterChip(
                                 selected = recipient == name,
                                 onClick = {
@@ -732,14 +826,25 @@ fun NativeQuickTransferDialog(
                         modifier = Modifier.fillMaxWidth(),
                     )
 
+                    val isOverBalance = parsedAmount > bankingState.mainAccountBalance
                     OutlinedTextField(
                         value = amountInput,
-                        onValueChange = { raw -> amountInput = raw.filter { it.isDigit() }.take(9) },
+                        onValueChange = { raw -> amountInput = raw.filter { it.isDigit() }.take(10) },
+                        isError = isOverBalance,
                         label = { Text("보낼 금액 (원) · 잔액 ${fmt.format(bankingState.mainAccountBalance)}원") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    if (isOverBalance) {
+                        Text(
+                            text =
+                                "🚫 보유 잔액(${fmt.format(bankingState.mainAccountBalance)}원)을 초과하여 송금할 수 없습니다.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf(10_000L to "+1만", 50_000L to "+5만", 100_000L to "+10만").forEach { (delta, label) ->
@@ -790,10 +895,18 @@ fun NativeQuickTransferDialog(
             } else {
                 Button(
                     onClick = { showBiometricStep = true },
-                    enabled = parsedAmount > 0L && recipient.isNotBlank(),
+                    enabled =
+                        parsedAmount > 0L &&
+                            parsedAmount <= bankingState.mainAccountBalance &&
+                            recipient.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B64DA)),
                 ) {
-                    Text("${fmt.format(parsedAmount)}원 보내기", fontWeight = FontWeight.Bold)
+                    Text(
+                        text =
+                            if (parsedAmount > bankingState.mainAccountBalance) "잔액 부족"
+                            else "${fmt.format(parsedAmount)}원 보내기",
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             }
         },

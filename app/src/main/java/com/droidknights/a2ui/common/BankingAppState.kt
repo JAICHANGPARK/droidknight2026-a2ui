@@ -74,7 +74,7 @@ class BankingAppState {
                 BankTransactionItem(
                     id = "tx_init_3",
                     dateLabel = "10.27 19:42",
-                    title = "김신한",
+                    title = "김민수",
                     subtitle = "저녁 더치페이 · 수수료 면제",
                     amountDelta = -120_000L,
                     balanceAfter = 31_520_000L,
@@ -83,7 +83,7 @@ class BankingAppState {
                 BankTransactionItem(
                     id = "tx_init_2",
                     dateLabel = "10.26 14:15",
-                    title = "박우리",
+                    title = "이지훈",
                     subtitle = "모임회비 · 수수료 면제",
                     amountDelta = -240_000L,
                     balanceAfter = 31_640_000L,
@@ -101,7 +101,7 @@ class BankingAppState {
                 BankTransactionItem(
                     id = "tx_init_0",
                     dateLabel = "10.21 12:30",
-                    title = "이아름",
+                    title = "최유진",
                     subtitle = "경조사비 송금",
                     amountDelta = -80_000L,
                     balanceAfter = 27_030_000L,
@@ -180,13 +180,56 @@ class BankingAppState {
         return voucher
     }
 
+    fun updateLatestVoucherPickup(
+        branchLabel: String,
+        pickupMethodLabel: String,
+        recipientPhone: String,
+    ): ExchangeVoucherItem? {
+        val current = exchangeVouchers.firstOrNull() ?: return null
+        val updated =
+            current.copy(
+                branchLabel = branchLabel.ifBlank { current.branchLabel },
+                pickupMethodLabel = pickupMethodLabel.ifBlank { current.pickupMethodLabel },
+                recipientPhone = recipientPhone.ifBlank { current.recipientPhone },
+            )
+        exchangeVouchers[0] = updated
+        return updated
+    }
+
+    fun cancelExchangeVoucher(voucherCode: String? = null): ExchangeVoucherItem? {
+        val target =
+            if (!voucherCode.isNullOrBlank()) {
+                exchangeVouchers.firstOrNull { it.voucherCode == voucherCode }
+                    ?: exchangeVouchers.firstOrNull()
+            } else {
+                exchangeVouchers.firstOrNull()
+            } ?: return null
+
+        exchangeVouchers.remove(target)
+        mainAccountBalance += target.krwAmount
+        val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
+        transactions.add(
+            0,
+            BankTransactionItem(
+                id = "tx_ex_cancel_${System.currentTimeMillis()}",
+                dateLabel = currentTimeLabel(),
+                title = "환전 신청 취소 환불 (${target.currency} ${fmt.format(target.foreignAmount)})",
+                subtitle = "${target.voucherCode} 바우처 취소 · 전액 환불",
+                amountDelta = +target.krwAmount,
+                balanceAfter = mainAccountBalance,
+                category = "환전취소",
+            ),
+        )
+        return target
+    }
+
     fun recordTransfer(
         recipient: String,
         amount: Long,
         memo: String,
         fromSalaryAccount: Boolean = true,
     ) {
-        val cleanRecipient = recipient.substringBefore(" (").trim().ifBlank { "박우리" }
+        val cleanRecipient = recipient.substringBefore(" (").trim().ifBlank { "이지훈" }
         val nowTime = currentTimeLabel()
         if (fromSalaryAccount) {
             mainAccountBalance = (mainAccountBalance - amount).coerceAtLeast(0L)

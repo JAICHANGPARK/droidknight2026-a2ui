@@ -61,7 +61,10 @@ import java.text.NumberFormat
 import java.util.Locale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -293,32 +296,49 @@ fun GeminiApiSettingsDialog(
     onSave: (apiKey: String, model: String, enabled: Boolean) -> Unit,
 ) {
     var apiKeyInput by rememberSaveable { mutableStateOf(initialApiKey) }
-    var modelInput by rememberSaveable { mutableStateOf(initialModel.ifBlank { "gemini-3.8-flash" }) }
-    var enabledInput by rememberSaveable { mutableStateOf(initialEnabled) }
+    var modelInput by rememberSaveable {
+        mutableStateOf(initialModel.ifBlank { A2uiGeminiApiClient.DEFAULT_LM_STUDIO_MODEL })
+    }
+    var isOnDeviceMode by rememberSaveable {
+        mutableStateOf(A2uiGeminiApiClient.isLmStudioModel(modelInput))
+    }
+    var enabledInput by rememberSaveable {
+        mutableStateOf(initialEnabled || isOnDeviceMode || initialApiKey.isNotBlank())
+    }
     var showRawKey by rememberSaveable { mutableStateOf(false) }
+    var discoveredLocalModels by remember {
+        mutableStateOf(listOf("google/gemma-4-e2b", "google/gemma-4-e4b"))
+    }
+    var lmStudioConnected by remember { mutableStateOf<Boolean?>(null) }
+
+    LaunchedEffect(isOnDeviceMode) {
+        if (isOnDeviceMode) {
+            val res = A2uiGeminiApiClient.fetchLmStudioModels()
+            val models = res.getOrNull()
+            if (!models.isNullOrEmpty()) {
+                discoveredLocalModels = models
+                lmStudioConnected = true
+                if (!A2uiGeminiApiClient.isLmStudioModel(modelInput)) {
+                    modelInput = models.first()
+                }
+            } else {
+                lmStudioConnected = false
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "🔑 Gemini API 연동 설정",
+                text = "⚙️ AI 엔진 설정 (On-Device / Gemini API)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
             )
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text =
-                        if (hasBuildConfigKey) {
-                            "✅ local.properties(GEMINI_API_KEY)에 설정된 키가 감지되었습니다. 아래에서 덮어쓰거나 그대로 사용할 수 있습니다."
-                        } else {
-                            "local.properties에 GEMINI_API_KEY=... 를 추가하거나 아래 입력창에 Gemini API 키를 입력하세요. 네트워크 오류 시 오프라인 프리셋으로 자동 폴백됩니다."
-                        },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
+                // 1. Master ON / OFF Switch
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -326,12 +346,12 @@ fun GeminiApiSettingsDialog(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Gemini API 호출 사용",
+                            text = "실시간 AI 응답 사용",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = "비활성화 시 오프라인 프리셋 스트리밍으로 동작",
+                            text = "OFF 시 오프라인 프리셋으로 동작",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -342,49 +362,166 @@ fun GeminiApiSettingsDialog(
                     )
                 }
 
-                OutlinedTextField(
-                    value = apiKeyInput,
-                    onValueChange = { apiKeyInput = it },
-                    label = { Text("Gemini API Key (AIza...)") },
-                    placeholder = {
-                        Text(
-                            if (hasBuildConfigKey) "local.properties 기본 키 사용 중"
-                            else "AIzaSy..."
-                        )
-                    },
-                    singleLine = true,
-                    visualTransformation =
-                        if (showRawKey) VisualTransformation.None
-                        else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        TextButton(onClick = { showRawKey = !showRawKey }) {
-                            Text(
-                                if (showRawKey) "숨김" else "보기",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                OutlinedTextField(
-                    value = modelInput,
-                    onValueChange = { modelInput = it },
-                    label = { Text("Gemini 모델명") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
+                // 2. 2-Mode Selector: On-Device AI (LM Studio) vs Gemini API (Cloud)
                 Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    listOf("gemini-3.8-flash", "gemini-4-argon", "gemini-3.5-flash-lite").forEach { presetModel ->
-                        FilterChip(
-                            selected = modelInput == presetModel,
-                            onClick = { modelInput = presetModel },
-                            label = { Text(presetModel, style = MaterialTheme.typography.labelSmall) },
-                        )
+                    FilterChip(
+                        selected = isOnDeviceMode,
+                        onClick = {
+                            isOnDeviceMode = true
+                            enabledInput = true
+                            if (!A2uiGeminiApiClient.isLmStudioModel(modelInput)) {
+                                modelInput =
+                                    discoveredLocalModels.firstOrNull()
+                                        ?: A2uiGeminiApiClient.DEFAULT_LM_STUDIO_MODEL
+                            }
+                        },
+                        label = {
+                            Text(
+                                text = "🖥️ On-Device (LM Studio)",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    FilterChip(
+                        selected = !isOnDeviceMode,
+                        onClick = {
+                            isOnDeviceMode = false
+                            if (A2uiGeminiApiClient.isLmStudioModel(modelInput)) {
+                                modelInput = "gemini-3.8-flash"
+                            }
+                        },
+                        label = {
+                            Text(
+                                text = "☁️ Gemini API",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                if (isOnDeviceMode) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text =
+                                    when (lmStudioConnected) {
+                                        true -> "🟢 LM Studio 로컬 서버 연결됨 (port: 1234)"
+                                        false -> "🟠 LM Studio 서버 확인 필요 (port: 1234)"
+                                        null -> "⏳ LM Studio 로컬 서버 확인 중..."
+                                    },
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                            Text(
+                                text = "API Key 없이 맥에서 실행 중인 로컬 Gemma 4 모델이 온디바이스로 응답합니다.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = modelInput,
+                        onValueChange = {
+                            modelInput = it
+                            enabledInput = true
+                        },
+                        label = { Text("On-Device 모델 식별자 (LM Studio)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        discoveredLocalModels.forEach { presetModel ->
+                            FilterChip(
+                                selected = modelInput == presetModel,
+                                onClick = {
+                                    modelInput = presetModel
+                                    enabledInput = true
+                                },
+                                label = { Text(presetModel, style = MaterialTheme.typography.labelSmall) },
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        text =
+                            if (hasBuildConfigKey) {
+                                "✅ local.properties(GEMINI_API_KEY)에 설정된 키가 감지되었습니다."
+                            } else {
+                                "Google AI Studio에서 발급한 Gemini API Key(AIza...)를 입력하세요."
+                            },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    OutlinedTextField(
+                        value = apiKeyInput,
+                        onValueChange = {
+                            apiKeyInput = it
+                            if (it.isNotBlank()) {
+                                enabledInput = true
+                            }
+                        },
+                        label = { Text("Gemini API Key (AIza...)") },
+                        placeholder = {
+                            Text(
+                                if (hasBuildConfigKey) "local.properties 기본 키 사용 중"
+                                else "AIzaSy..."
+                            )
+                        },
+                        singleLine = true,
+                        visualTransformation =
+                            if (showRawKey) VisualTransformation.None
+                            else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            TextButton(onClick = { showRawKey = !showRawKey }) {
+                                Text(
+                                    if (showRawKey) "숨김" else "보기",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    OutlinedTextField(
+                        value = modelInput,
+                        onValueChange = { modelInput = it },
+                        label = { Text("Gemini 모델명") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf("gemini-3.8-flash", "gemini-4-argon", "gemini-3.5-flash-lite").forEach { presetModel ->
+                            FilterChip(
+                                selected = modelInput == presetModel,
+                                onClick = { modelInput = presetModel },
+                                label = { Text(presetModel, style = MaterialTheme.typography.labelSmall) },
+                            )
+                        }
                     }
                 }
             }
@@ -460,10 +597,19 @@ fun A2uiAgentChatScaffold(
     var chatTurnCounter by rememberSaveable { mutableIntStateOf(0) }
     val archivedTurns = remember { mutableStateListOf<ArchivedChatTurn>() }
 
-    val sendPromptMessage: (String, Int?) -> Unit = { promptText, targetIdx ->
+    val sendPromptMessage: (String, Int?) -> Unit = sendPrompt@{ promptText, targetIdx ->
         val finalPrompt = promptText.trim().ifBlank { activePreset.userPromptText }
+        // Ignore rapid duplicate click on the exact same prompt while it is already streaming
+        if (
+            isStreaming &&
+                ((targetIdx != null && targetIdx == selectedPromptIndex && customSubmittedMessage == null) ||
+                    (targetIdx == null && finalPrompt == displayedUserMessage && hasActiveUserTurn))
+        ) {
+            return@sendPrompt
+        }
+
         // Archive the current turn into conversation history ONLY if a user turn was already active
-        if (hasActiveUserTurn) {
+        if (hasActiveUserTurn && !isStreaming) {
             val currentEventMessages = outboundLog.filterIsInstance<A2uiClientEventMessage>()
             val completedSummary =
                 if (currentEventMessages.isNotEmpty()) {
@@ -488,8 +634,12 @@ fun A2uiAgentChatScaffold(
         chatTurnCounter += 1
         if (targetIdx != null) {
             // Quick-prompt chip clicked
+            val wasSameIndex = (targetIdx == selectedPromptIndex && customSubmittedMessage == null)
             customSubmittedMessage = null
             onSelectPrompt(targetIdx)
+            if (wasSameIndex) {
+                onClearOutbound()
+            }
         } else {
             // Free-form user text submitted
             customSubmittedMessage = finalPrompt
@@ -742,7 +892,7 @@ fun A2uiAgentChatScaffold(
                                     ?: ("안녕하세요 박제창님! DK AI 금융비서입니다 😊\n\n" +
                                         "일반 텍스트 대화처럼 무엇이든 물어보시거나, 환전·송금·카드결제를 바로 요청해 보세요.\n" +
                                         "• 💬 일반 질문: \"오늘 엔화 환율 얼마야?\", \"내 통장 잔액 알려줘\", \"공항 수령 어디서 해?\"\n" +
-                                        "• ⚡ A2UI 실행: \"인천공항 1터미널 수령으로 5만 엔 환전해 줘\", \"박우리님께 24만 원 보내 줘\""),
+                                        "• ⚡ A2UI 실행: \"인천공항 1터미널 수령으로 5만 엔 환전해 줘\", \"이지훈님께 24만 원 보내 줘\""),
                             fromUser = false,
                             senderLabel = if (isBankingScenario) "AI 금융비서" else "AI 에이전트",
                         )
@@ -808,7 +958,23 @@ fun A2uiAgentChatScaffold(
                         }
 
                         // Live inline A2uiSurface rendered inside the Agent's chat flow
-                        Box(modifier = Modifier.fillMaxWidth()) {
+                        // When isStreaming is true (e.g., waiting for next UI after button click),
+                        // consume all touch/pointer events at Initial pass to prevent duplicate clicks.
+                        Box(
+                            modifier =
+                                Modifier.fillMaxWidth()
+                                    .alpha(if (isStreaming && eventMessages.isNotEmpty()) 0.55f else 1f)
+                                    .pointerInput(isStreaming) {
+                                        if (isStreaming) {
+                                            awaitPointerEventScope {
+                                                while (true) {
+                                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                                    event.changes.forEach { it.consume() }
+                                                }
+                                            }
+                                        }
+                                    },
+                        ) {
                             surfaceContent()
                         }
                     }
@@ -1002,7 +1168,7 @@ private fun matchOfflinePromptIndex(
         }
     }
     return when {
-        q.contains("이체") || q.contains("송금") || q.contains("박우리") || q.contains("김신한") || q.contains("회비") -> 1
+        q.contains("이체") || q.contains("송금") || q.contains("이지훈") || q.contains("김민수") || q.contains("최유진") || q.contains("회비") -> 1
         q.contains("카드") || q.contains("명세서") || q.contains("즉시결제") || q.contains("분할") || q.contains("할부") -> 2
         q.contains("보험") || q.contains("출국") || q.contains("3종") -> 3
         q.contains("달러") || q.contains("usd") || q.contains("소액권") -> 4

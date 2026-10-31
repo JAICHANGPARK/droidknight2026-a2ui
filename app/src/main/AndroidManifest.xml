@@ -7,6 +7,7 @@
         android:allowBackup="true"
         android:label="DroidKnights 2026 · AndroidX A2UI"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity
             android:name=".MainActivity"

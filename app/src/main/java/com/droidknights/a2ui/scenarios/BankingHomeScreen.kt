@@ -1,5 +1,6 @@
 package com.droidknights.a2ui.scenarios
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -8,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +17,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,11 +29,14 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -47,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import com.droidknights.a2ui.BuildConfig
 import com.droidknights.a2ui.common.A2uiComparisonDisplayMode
 import com.droidknights.a2ui.common.A2uiGeminiApiClient
+import com.droidknights.a2ui.common.BankingAppState
 import com.droidknights.a2ui.common.ExchangeVoucherItem
 import com.droidknights.a2ui.common.ExchangeVoucherQrDialog
 import com.droidknights.a2ui.common.ExchangeVoucherQrTicketCard
@@ -57,6 +66,12 @@ import com.droidknights.a2ui.common.NativeCardStatementDialog
 import com.droidknights.a2ui.common.NativeQuickTransferDialog
 import java.text.NumberFormat
 import java.util.Locale
+
+private enum class BankingHomeSubScreen {
+    HOME,
+    ACCOUNT_LEDGER_DETAIL,
+    EXCHANGE_HISTORY_DETAIL,
+}
 
 /**
  * Real-app style Korean mobile banking home screen (Toss / Shinhan SOL style)
@@ -73,11 +88,15 @@ fun BankingHomeScreen(
     val fmt = remember { NumberFormat.getNumberInstance(Locale.KOREA) }
 
     var hideBalance by rememberSaveable { mutableStateOf(false) }
+    var activeSubScreenName by rememberSaveable { mutableStateOf(BankingHomeSubScreen.HOME.name) }
+    val activeSubScreen =
+        BankingHomeSubScreen.entries.firstOrNull { it.name == activeSubScreenName }
+            ?: BankingHomeSubScreen.HOME
 
     // Native Banking Modal States
     var showAccountLedgerDialog by rememberSaveable { mutableStateOf(false) }
     var showQuickTransferDialog by rememberSaveable { mutableStateOf(false) }
-    var transferRecipientPreset by rememberSaveable { mutableStateOf("박우리") }
+    var transferRecipientPreset by rememberSaveable { mutableStateOf("이지훈") }
     var transferAmountPreset by rememberSaveable { mutableLongStateOf(240_000L) }
     var showCardStatementDialog by rememberSaveable { mutableStateOf(false) }
     var selectedQrVoucher by remember { mutableStateOf<ExchangeVoucherItem?>(null) }
@@ -147,6 +166,10 @@ fun BankingHomeScreen(
         ExchangeVoucherQrDialog(
             voucher = voucher,
             onDismiss = { selectedQrVoucher = null },
+            onCancelVoucher = { target ->
+                bankingState.cancelExchangeVoucher(target.voucherCode)
+                selectedQrVoucher = null
+            },
         )
     }
 
@@ -156,6 +179,43 @@ fun BankingHomeScreen(
     val accentYellow = Color(0xFFFFCC00)
     val darkNavy = Color(0xFF191F28)
     val mutedGray = Color(0xFF6B7684)
+
+    if (activeSubScreen != BankingHomeSubScreen.HOME) {
+        BackHandler {
+            activeSubScreenName = BankingHomeSubScreen.HOME.name
+        }
+        when (activeSubScreen) {
+            BankingHomeSubScreen.ACCOUNT_LEDGER_DETAIL -> {
+                AccountLedgerDetailScreen(
+                    bankingState = bankingState,
+                    onNavigateBack = { activeSubScreenName = BankingHomeSubScreen.HOME.name },
+                    onOpenTransfer = {
+                        transferRecipientPreset = "이지훈"
+                        transferAmountPreset = 240_000L
+                        showQuickTransferDialog = true
+                    },
+                    onAskAiAssistant = {
+                        onOpenAiAssistant(7, A2uiComparisonDisplayMode.TO_BE_AGENT_CHAT)
+                    },
+                )
+            }
+            BankingHomeSubScreen.EXCHANGE_HISTORY_DETAIL -> {
+                ExchangeHistoryDetailScreen(
+                    bankingState = bankingState,
+                    onNavigateBack = { activeSubScreenName = BankingHomeSubScreen.HOME.name },
+                    onSelectQrVoucher = { selectedQrVoucher = it },
+                    onOpenLegacyExchange = {
+                        onOpenAiAssistant(0, A2uiComparisonDisplayMode.AS_IS_LEGACY_APP)
+                    },
+                    onOpenAiExchange = {
+                        onOpenAiAssistant(0, A2uiComparisonDisplayMode.TO_BE_AGENT_CHAT)
+                    },
+                )
+            }
+            BankingHomeSubScreen.HOME -> Unit
+        }
+        return
+    }
 
     Scaffold(
         containerColor = bgLight,
@@ -257,26 +317,119 @@ fun BankingHomeScreen(
                     }
 
                     Surface(
-                        color = Color(0xFFE5E8EB),
-                        shape = CircleShape,
-                        modifier = Modifier.size(36.dp).clickable { showGeminiSettingsDialog = true },
+                        color = if (isGeminiEnabled) primaryBlue.copy(alpha = 0.12f) else Color(0xFFE5E8EB),
+                        shape = RoundedCornerShape(18.dp),
+                        modifier = Modifier.clickable { showGeminiSettingsDialog = true },
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(text = "⚙️", fontSize = 16.sp)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(text = "⚙️", fontSize = 14.sp)
+                            Text(
+                                text =
+                                    when {
+                                        !isGeminiEnabled -> "AI 설정"
+                                        A2uiGeminiApiClient.isLmStudioModel(geminiModel) -> "On-Device"
+                                        else -> "Gemini API"
+                                    },
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isGeminiEnabled) primaryBlue else darkNavy,
+                            )
                         }
                     }
                 }
             }
 
-            // 1-B. Issued Foreign Currency Exchange QR Voucher Banner (Appears dynamically after Exchange!)
+            // 1-B. Issued Foreign Currency Exchange QR Voucher HorizontalPager (Swipeable Wallet Pass Carousel)
             AnimatedVisibility(visible = bankingState.exchangeVouchers.isNotEmpty()) {
-                val latestVoucher = bankingState.exchangeVouchers.firstOrNull()
-                if (latestVoucher != null) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ExchangeVoucherQrTicketCard(
-                            voucher = latestVoucher,
-                            modifier = Modifier.clickable { selectedQrVoucher = latestVoucher },
+                val vouchers = bankingState.exchangeVouchers
+                val pagerState = rememberPagerState(pageCount = { vouchers.size })
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier =
+                            Modifier.fillMaxWidth()
+                                .clickable {
+                                    activeSubScreenName = BankingHomeSubScreen.EXCHANGE_HISTORY_DETAIL.name
+                                },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Text(
+                                text = "🎫 보유 외화 수령 바우처",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = darkNavy,
+                            )
+                            Surface(
+                                color = primaryBlue.copy(alpha = 0.12f),
+                                shape = RoundedCornerShape(10.dp),
+                            ) {
+                                Text(
+                                    text = "${ (pagerState.currentPage + 1).coerceAtMost(vouchers.size.coerceAtLeast(1)) } / ${vouchers.size}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = primaryBlue,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
+                        Text(
+                            text = "환전 내역 · 전체보기 ›",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryBlue,
                         )
+                    }
+
+                    HorizontalPager(
+                        state = pagerState,
+                        contentPadding =
+                            PaddingValues(
+                                end = if (vouchers.size > 1) 24.dp else 0.dp,
+                            ),
+                        pageSpacing = 12.dp,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { page ->
+                        val voucher = vouchers.getOrNull(page)
+                        if (voucher != null) {
+                            ExchangeVoucherQrTicketCard(
+                                voucher = voucher,
+                                modifier =
+                                    Modifier.clickable {
+                                        selectedQrVoucher = voucher
+                                    },
+                            )
+                        }
+                    }
+
+                    if (vouchers.size > 1) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            repeat(vouchers.size) { idx ->
+                                val isSelected = pagerState.currentPage == idx
+                                Box(
+                                    modifier =
+                                        Modifier.padding(horizontal = 3.dp)
+                                            .height(6.dp)
+                                            .width(if (isSelected) 18.dp else 6.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (isSelected) primaryBlue
+                                                else Color(0xFFD1D6DB)
+                                            ),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -325,11 +478,13 @@ fun BankingHomeScreen(
                     modifier = Modifier.fillMaxWidth().padding(22.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    // Account Title Row -> Opens Native Account Ledger & Bankbook Copy Dialog
+                    // Account Title Row -> Navigates to Dedicated Account Ledger Detail Screen
                     Row(
                         modifier =
                             Modifier.fillMaxWidth()
-                                .clickable { showAccountLedgerDialog = true },
+                                .clickable {
+                                    activeSubScreenName = BankingHomeSubScreen.ACCOUNT_LEDGER_DETAIL.name
+                                },
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -410,7 +565,7 @@ fun BankingHomeScreen(
                     ) {
                         Button(
                             onClick = {
-                                transferRecipientPreset = "박우리"
+                                transferRecipientPreset = "이지훈"
                                 transferAmountPreset = 240_000L
                                 showQuickTransferDialog = true
                             },
@@ -457,9 +612,9 @@ fun BankingHomeScreen(
                     ) {
                         val recentTransfers =
                             listOf(
-                                Triple("박우리 24만", "박우리" to 240_000L, Color(0xFF1B64DA)),
-                                Triple("김신한 12만", "김신한" to 120_000L, Color(0xFFF59E0B)),
-                                Triple("이아름 8만", "이아름" to 80_000L, Color(0xFF10B981)),
+                                Triple("이지훈 24만", "이지훈" to 240_000L, Color(0xFF1B64DA)),
+                                Triple("김민수 12만", "김민수" to 120_000L, Color(0xFFF59E0B)),
+                                Triple("최유진 8만", "최유진" to 80_000L, Color(0xFF10B981)),
                             )
                         recentTransfers.forEach { (label, preset, dotColor) ->
                             Surface(
@@ -498,7 +653,10 @@ fun BankingHomeScreen(
                     HorizontalDivider(color = Color(0xFFF2F4F6))
                     Column(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth().clickable { showAccountLedgerDialog = true },
+                        modifier =
+                            Modifier.fillMaxWidth().clickable {
+                                activeSubScreenName = BankingHomeSubScreen.ACCOUNT_LEDGER_DETAIL.name
+                            },
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -512,7 +670,7 @@ fun BankingHomeScreen(
                                 color = mutedGray,
                             )
                             Text(
-                                text = "전체보기 (${bankingState.transactions.size}건) ›",
+                                text = "상세 화면 보기 (${bankingState.transactions.size}건) ›",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = primaryBlue,
@@ -628,21 +786,22 @@ fun BankingHomeScreen(
                     horizontalArrangement = Arrangement.SpaceAround,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    val voucherCount = bankingState.exchangeVouchers.size
+                    val exchangeHistoryLabel =
+                        if (voucherCount > 0) "환전내역($voucherCount)" else "환전내역"
                     val quickMenus: List<Triple<String, String, () -> Unit>> =
                         listOf(
-                            Triple("💴", "환전 (7단계)") {
+                            Triple("💴", "환전신청") {
                                 onOpenAiAssistant(0, A2uiComparisonDisplayMode.AS_IS_LEGACY_APP)
                             },
+                            Triple("🎫", exchangeHistoryLabel) {
+                                activeSubScreenName = BankingHomeSubScreen.EXCHANGE_HISTORY_DETAIL.name
+                            },
                             Triple("🧾", "입출금내역") {
-                                showAccountLedgerDialog = true
+                                activeSubScreenName = BankingHomeSubScreen.ACCOUNT_LEDGER_DETAIL.name
                             },
                             Triple("✈️", "출국 3종(AI)") {
                                 onOpenAiAssistant(3, A2uiComparisonDisplayMode.TO_BE_AGENT_CHAT)
-                            },
-                            Triple("💸", "간편송금") {
-                                transferRecipientPreset = "박우리"
-                                transferAmountPreset = 240_000L
-                                showQuickTransferDialog = true
                             },
                         )
                     quickMenus.forEach { (emoji, label, onClickAction) ->
@@ -675,6 +834,589 @@ fun BankingHomeScreen(
             }
 
             Spacer(modifier = Modifier.height(72.dp))
+        }
+    }
+}
+
+/**
+ * Full-screen dedicated detail screen for DK Main Account Transactions (입출금 내역 상세 화면).
+ */
+@Composable
+private fun AccountLedgerDetailScreen(
+    bankingState: BankingAppState,
+    onNavigateBack: () -> Unit,
+    onOpenTransfer: () -> Unit,
+    onAskAiAssistant: () -> Unit,
+) {
+    val fmt = remember { NumberFormat.getNumberInstance(Locale.KOREA) }
+    var filterMode by rememberSaveable { mutableStateOf("ALL") }
+    var showBankbookCopy by rememberSaveable { mutableStateOf(false) }
+
+    val bgLight = Color(0xFFF4F6FA)
+    val cardWhite = Color(0xFFFFFFFF)
+    val primaryBlue = Color(0xFF1B64DA)
+    val darkNavy = Color(0xFF191F28)
+    val mutedGray = Color(0xFF6B7684)
+
+    val filteredTx =
+        bankingState.transactions.filter { tx ->
+            when (filterMode) {
+                "IN" -> tx.amountDelta > 0
+                "OUT" -> tx.amountDelta < 0
+                "EXCHANGE" -> tx.category == "환전" || tx.category == "환전취소"
+                else -> true
+            }
+        }
+
+    Scaffold(
+        containerColor = bgLight,
+        topBar = {
+            Surface(
+                color = cardWhite,
+                shadowElevation = 1.dp,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Surface(
+                            color = Color(0xFFF2F4F6),
+                            shape = CircleShape,
+                            modifier = Modifier.size(36.dp).clickable { onNavigateBack() },
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "←",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = darkNavy,
+                                )
+                            }
+                        }
+                        Column {
+                            Text(
+                                text = "입출금 내역 상세",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = darkNavy,
+                            )
+                            Text(
+                                text = "DK 주거래 통장 (110-482-910284)",
+                                fontSize = 11.sp,
+                                color = mutedGray,
+                            )
+                        }
+                    }
+
+                    TextButton(onClick = onAskAiAssistant) {
+                        Text(
+                            text = "🤖 AI 분석·사본",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryBlue,
+                        )
+                    }
+                }
+            }
+        },
+    ) { innerPadding ->
+        Column(
+            modifier =
+                Modifier.fillMaxSize()
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            // 1. Account Summary Header Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = cardWhite),
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column {
+                            Text(
+                                text = "현재 출금가능 잔액",
+                                fontSize = 12.sp,
+                                color = mutedGray,
+                            )
+                            Text(
+                                text = "${fmt.format(bankingState.mainAccountBalance)}원",
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = darkNavy,
+                            )
+                        }
+                        Surface(
+                            color = Color(0xFFE8F3FF),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.clickable { showBankbookCopy = !showBankbookCopy },
+                        ) {
+                            Text(
+                                text = if (showBankbookCopy) "통장사본 닫기" else "📄 통장사본 보기",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = primaryBlue,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            )
+                        }
+                    }
+
+                    AnimatedVisibility(visible = showBankbookCopy) {
+                        Surface(
+                            color = Color(0xFFF2F6FC),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    text = "📜 전자 통장사본 (계좌개설확인서)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = primaryBlue,
+                                )
+                                Text("• 예금주: 박제창 (VVIP)", fontSize = 12.sp, color = darkNavy)
+                                Text("• 계좌종류: DK 주거래 입출금통장 (연 2.0%)", fontSize = 12.sp, color = darkNavy)
+                                Text("• 계좌번호: 110-482-910284", fontSize = 12.sp, color = darkNavy)
+                                Text("• 발급일시: 2026.10.31 (직인생략)", fontSize = 12.sp, color = mutedGray)
+                            }
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Button(
+                            onClick = onOpenTransfer,
+                            colors =
+                                ButtonDefaults.buttonColors(
+                                    containerColor = primaryBlue,
+                                    contentColor = Color.White,
+                                ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("💸 간편 송금하기", fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = onAskAiAssistant,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text("🤖 AI 내역 조회", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            // 2. Category Filter Chips
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf(
+                    "ALL" to "전체 (${bankingState.transactions.size})",
+                    "IN" to "입금·환불 (${bankingState.transactions.count { it.amountDelta > 0 }})",
+                    "OUT" to "출금 (${bankingState.transactions.count { it.amountDelta < 0 }})",
+                    "EXCHANGE" to "환전·환전취소 (${bankingState.transactions.count { it.category == "환전" || it.category == "환전취소" }})",
+                ).forEach { (key, label) ->
+                    FilterChip(
+                        selected = filterMode == key,
+                        onClick = { filterMode = key },
+                        label = { Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
+                    )
+                }
+            }
+
+            // 3. Full Transaction List Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = cardWhite),
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    if (filteredTx.isEmpty()) {
+                        Text(
+                            text = "해당 조건의 거래 내역이 없습니다.",
+                            fontSize = 13.sp,
+                            color = mutedGray,
+                            modifier = Modifier.padding(vertical = 20.dp),
+                        )
+                    } else {
+                        filteredTx.forEachIndexed { idx, tx ->
+                            val isDeposit = tx.amountDelta > 0
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Box(
+                                        modifier =
+                                            Modifier.size(40.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isDeposit) Color(0xFFE8F3FF)
+                                                    else Color(0xFFF2F4F6)
+                                                ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text =
+                                                when (tx.category) {
+                                                    "환전" -> "💴"
+                                                    "환전취소" -> "↩️"
+                                                    "카드결제" -> "💳"
+                                                    "해외여행" -> "✈️"
+                                                    "급여" -> "💰"
+                                                    else -> "💸"
+                                                },
+                                            fontSize = 17.sp,
+                                        )
+                                    }
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = tx.title,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = darkNavy,
+                                        )
+                                        Text(
+                                            text = "${tx.dateLabel} · ${tx.subtitle}",
+                                            fontSize = 11.sp,
+                                            color = mutedGray,
+                                        )
+                                    }
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text =
+                                            if (isDeposit) "+${fmt.format(tx.amountDelta)}원"
+                                            else "${fmt.format(tx.amountDelta)}원",
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (isDeposit) primaryBlue else darkNavy,
+                                    )
+                                    Text(
+                                        text = "잔액 ${fmt.format(tx.balanceAfter)}원",
+                                        fontSize = 11.sp,
+                                        color = mutedGray,
+                                    )
+                                }
+                            }
+                            if (idx < filteredTx.lastIndex) {
+                                HorizontalDivider(color = Color(0xFFF2F4F6))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Full-screen dedicated detail screen for Foreign Currency Exchange Vouchers & Exchange History (환전 내역 상세 화면).
+ */
+@Composable
+private fun ExchangeHistoryDetailScreen(
+    bankingState: BankingAppState,
+    onNavigateBack: () -> Unit,
+    onSelectQrVoucher: (ExchangeVoucherItem) -> Unit,
+    onOpenLegacyExchange: () -> Unit,
+    onOpenAiExchange: () -> Unit,
+) {
+    val fmt = remember { NumberFormat.getNumberInstance(Locale.KOREA) }
+    val bgLight = Color(0xFFF4F6FA)
+    val cardWhite = Color(0xFFFFFFFF)
+    val primaryBlue = Color(0xFF1B64DA)
+    val darkNavy = Color(0xFF191F28)
+    val mutedGray = Color(0xFF6B7684)
+
+    val vouchers = bankingState.exchangeVouchers
+    val exchangeTransactions =
+        bankingState.transactions.filter {
+            it.category == "환전" || it.category == "환전취소"
+        }
+
+    Scaffold(
+        containerColor = bgLight,
+        topBar = {
+            Surface(
+                color = cardWhite,
+                shadowElevation = 1.dp,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Surface(
+                            color = Color(0xFFF2F4F6),
+                            shape = CircleShape,
+                            modifier = Modifier.size(36.dp).clickable { onNavigateBack() },
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "←",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = darkNavy,
+                                )
+                            }
+                        }
+                        Column {
+                            Text(
+                                text = "외화 환전 · 바우처 내역",
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = darkNavy,
+                            )
+                            Text(
+                                text = "미수령 바우처 ${vouchers.size}건 · 환전 이력 ${exchangeTransactions.size}건",
+                                fontSize = 11.sp,
+                                color = mutedGray,
+                            )
+                        }
+                    }
+
+                    TextButton(onClick = onOpenAiExchange) {
+                        Text(
+                            text = "🤖 AI 환전",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = primaryBlue,
+                        )
+                    }
+                }
+            }
+        },
+    ) { innerPadding ->
+        Column(
+            modifier =
+                Modifier.fillMaxSize()
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            // 1. Active Exchange Vouchers Section
+            Text(
+                text = "🎫 보유 외화 수령 바우처 (${vouchers.size}건)",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = darkNavy,
+            )
+
+            if (vouchers.isEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = cardWhite),
+                    shape = RoundedCornerShape(22.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = "현재 수령 대기 중인 외화 환전 바우처가 없습니다.",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = darkNavy,
+                        )
+                        Text(
+                            text = "기존 7단계 환전 또는 AI 챗봇 1단계 환전으로 신청하시면 즉시 인천공항 수령 모바일 QR 바우처가 발급됩니다.",
+                            fontSize = 12.sp,
+                            color = mutedGray,
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = onOpenLegacyExchange,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("환전 (기존 7단계)", fontWeight = FontWeight.Bold)
+                            }
+                            Button(
+                                onClick = onOpenAiExchange,
+                                colors =
+                                    ButtonDefaults.buttonColors(
+                                        containerColor = primaryBlue,
+                                        contentColor = Color.White,
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text("🤖 AI 원샷 환전", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            } else {
+                vouchers.forEach { voucher ->
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ExchangeVoucherQrTicketCard(
+                            voucher = voucher,
+                            modifier = Modifier.clickable { onSelectQrVoucher(voucher) },
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedButton(
+                                onClick = { onSelectQrVoucher(voucher) },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(
+                                    text = "🔍 QR 바우처 크게 보기",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { bankingState.cancelExchangeVoucher(voucher.voucherCode) },
+                                colors =
+                                    ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.error,
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(
+                                    text = "↩️ 신청 취소 (+${fmt.format(voucher.krwAmount)}원 환불)",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Exchange & Cancellation Transaction History Section
+            Text(
+                text = "📋 환전 · 재환전 · 취소 처리 내역 (${exchangeTransactions.size}건)",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = darkNavy,
+            )
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = cardWhite),
+                shape = RoundedCornerShape(22.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    if (exchangeTransactions.isEmpty()) {
+                        Text(
+                            text = "아직 진행한 외화 환전 내역이 없습니다.",
+                            fontSize = 13.sp,
+                            color = mutedGray,
+                            modifier = Modifier.padding(vertical = 12.dp),
+                        )
+                    } else {
+                        exchangeTransactions.forEachIndexed { idx, tx ->
+                            val isRefundOrSell = tx.amountDelta > 0
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Box(
+                                        modifier =
+                                            Modifier.size(40.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isRefundOrSell) Color(0xFFE8F3FF)
+                                                    else Color(0xFFF2F4F6)
+                                                ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = if (tx.category == "환전취소") "↩️" else "💴",
+                                            fontSize = 17.sp,
+                                        )
+                                    }
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = tx.title,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = darkNavy,
+                                        )
+                                        Text(
+                                            text = "${tx.dateLabel} · ${tx.subtitle}",
+                                            fontSize = 11.sp,
+                                            color = mutedGray,
+                                        )
+                                    }
+                                }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text =
+                                            if (isRefundOrSell) "+${fmt.format(tx.amountDelta)}원"
+                                            else "${fmt.format(tx.amountDelta)}원",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = if (isRefundOrSell) primaryBlue else darkNavy,
+                                    )
+                                    Text(
+                                        text = "잔액 ${fmt.format(tx.balanceAfter)}원",
+                                        fontSize = 11.sp,
+                                        color = mutedGray,
+                                    )
+                                }
+                            }
+                            if (idx < exchangeTransactions.lastIndex) {
+                                HorizontalDivider(color = Color(0xFFF2F4F6))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

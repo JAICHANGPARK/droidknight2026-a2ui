@@ -51,7 +51,7 @@ interface BidirectionalExchangeInputSchema : A2uiComponent {
     ) {
         val currencyCode = properties[currencyCodeProperty] ?: return
         val currencyLabel = properties[currencyLabelProperty] ?: "환전할 외화"
-        val exchangeRate = (properties[exchangeRateProperty] ?: 904.12).toDouble()
+        val exchangeRate = (properties[exchangeRateProperty] ?: 847.88).toDouble()
         val unitScale = (properties[unitScaleProperty] ?: 100.0).toDouble()
         val foreignAmount = properties.bind(foreignAmountProperty)?.toLong() ?: return
         val krwAmount = properties.bind(krwAmountProperty)?.toLong()
@@ -105,7 +105,7 @@ interface BidirectionalExchangeInputSchema : A2uiComponent {
         val currencyLabelProperty =
             A2uiProperty.string("currencyLabel", required = false, description = "Display label for foreign currency field")
         val exchangeRateProperty =
-            A2uiProperty.number("exchangeRate", defaultValue = 904.12, description = "KRW exchange rate per unitScale")
+            A2uiProperty.number("exchangeRate", defaultValue = 847.88, description = "KRW exchange rate per unitScale")
         val unitScaleProperty =
             A2uiProperty.number("unitScale", defaultValue = 100.0, description = "100 for JPY, 1 for USD/EUR/CHF")
         val foreignAmountProperty =

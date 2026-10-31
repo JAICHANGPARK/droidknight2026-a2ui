@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.droidknights.a2ui.catalog.schema.DomainCatalogSchemas
+import com.droidknights.a2ui.common.LocalBankingAppState
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.roundToLong
@@ -43,10 +44,15 @@ object BidirectionalExchangeInputComponent : DomainCatalogSchemas.BidirectionalE
         onKrwAmountChange: ((Number) -> Unit)?,
         modifier: Modifier,
     ) {
+        val bankingState = LocalBankingAppState.current
         val numberFormat = remember { NumberFormat.getNumberInstance(Locale.KOREA) }
         var foreignText by remember { mutableStateOf(foreignAmount.toString()) }
         var krwText by remember { mutableStateOf(krwAmount.toString()) }
         var editingSide by remember { mutableStateOf<String?>(null) }
+
+        val currentKrw = krwText.toLongOrNull() ?: krwAmount
+        val isSellBackMode = currencyLabel.contains("재환전")
+        val isOverBalance = !isSellBackMode && currentKrw > bankingState.mainAccountBalance
 
         LaunchedEffect(foreignAmount) {
             if (editingSide != "FOREIGN") {
@@ -103,7 +109,7 @@ object BidirectionalExchangeInputComponent : DomainCatalogSchemas.BidirectionalE
                     value = foreignText,
                     onValueChange = { raw ->
                         editingSide = "FOREIGN"
-                        val digits = raw.filter { it.isDigit() }.take(9)
+                        val digits = raw.filter { it.isDigit() }.take(10)
                         foreignText = digits
                         val parsed = digits.toLongOrNull() ?: 0L
                         val calcKrw = ((parsed.toDouble() / unitScale) * exchangeRate).roundToLong()
@@ -111,6 +117,7 @@ object BidirectionalExchangeInputComponent : DomainCatalogSchemas.BidirectionalE
                         onForeignAmountChange?.invoke(parsed)
                         onKrwAmountChange?.invoke(calcKrw)
                     },
+                    isError = isOverBalance,
                     label = { Text("받으실 외화 ($currencyCode)") },
                     suffix = {
                         Text(
@@ -136,12 +143,15 @@ object BidirectionalExchangeInputComponent : DomainCatalogSchemas.BidirectionalE
                         onKrwAmountChange?.invoke(parsedKrw)
                         onForeignAmountChange?.invoke(calcForeign)
                     },
+                    isError = isOverBalance,
                     label = { Text("출금될 원화 (KRW)") },
                     suffix = {
                         Text(
                             text = "약 ${numberFormat.format(krwText.toLongOrNull() ?: 0L)} 원",
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
+                            color =
+                                if (isOverBalance) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold,
                         )
                     },
@@ -149,6 +159,24 @@ object BidirectionalExchangeInputComponent : DomainCatalogSchemas.BidirectionalE
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                if (isOverBalance) {
+                    val shortfall = currentKrw - bankingState.mainAccountBalance
+                    Text(
+                        text =
+                            "🚫 출금 가능 잔액(${numberFormat.format(bankingState.mainAccountBalance)}원)을 초과했습니다 · 부족 금액: ${numberFormat.format(shortfall)}원",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else if (!isSellBackMode) {
+                    Text(
+                        text =
+                            "💳 출금 가능 잔액: ${numberFormat.format(bankingState.mainAccountBalance)}원 (환전 후 예상 잔액: ${numberFormat.format((bankingState.mainAccountBalance - currentKrw).coerceAtLeast(0L))}원)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
 
                 val presets =
                     if (unitScale == 100.0) listOf(30000L, 50000L, 100000L)
