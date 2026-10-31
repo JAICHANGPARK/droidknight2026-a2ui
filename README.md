@@ -86,7 +86,7 @@ droidknight2026-a2ui/
 
 ### 🔄 최신 `androidx-main` 자동 추적 vs 특정 빌드 고정 (`gradle.properties`)
 - **기본값 (`androidx.a2ui.snapshotBuildId=latest`)**: AOSP `androidx-main` 최신 성공 빌드를 자동 추적합니다 (`./gradlew :app:assembleDebug --refresh-dependencies`로 즉시 최신화 가능).
-- **특정 빌드 고정 (`androidx.a2ui.snapshotBuildId=16770660`)**: 발표 리허설/본 발표 직전 특정 스냅샷 빌드 ID로 고정하여 업스트림 변경으로부터 빌드를 보호할 수 있습니다.
+- **특정 빌드 고정 (`androidx.a2ui.snapshotBuildId=16786775`)**: 발표 리허설/본 발표 직전 특정 스냅샷 빌드 ID로 고정하여 업스트림 변경으로부터 빌드를 보호할 수 있습니다.
 
 ---
 

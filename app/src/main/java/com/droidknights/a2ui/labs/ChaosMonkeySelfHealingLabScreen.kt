@@ -206,33 +206,35 @@ fun ChaosMonkeySelfHealingLabScreen() {
         }
 
         activeSurfaces.forEach { surface ->
-            A2uiSurface(
-                surfaceModel = surface,
-                modifier = Modifier.fillMaxWidth(),
-                errorContent = { exception ->
-                    Card(
-                        colors =
-                            CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                            ),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Text(
-                                text = "A2uiSurface 에러 경계",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                            )
-                            Text(
-                                text = exception.message.orEmpty(),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                            )
+            androidx.compose.runtime.key(surface.id) {
+                A2uiSurface(
+                    surfaceModel = surface,
+                    modifier = Modifier.fillMaxWidth(),
+                    errorContent = { exception ->
+                        Card(
+                            colors =
+                                CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                ),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Text(
+                                    text = "A2uiSurface 에러 경계",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                                Text(
+                                    text = exception.message.orEmpty(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                )
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         }
 
         A2uiTelemetryPanel(

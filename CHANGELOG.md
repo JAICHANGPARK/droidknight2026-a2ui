@@ -4,6 +4,19 @@
 
 ---
 
+## [2026-10-31] AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16786775`) 및 `CL 4404195` 최신 변경사항 반영
+
+AOSP `androidx-main` 최신 스냅샷(Build `16786775`)과 Gerrit 신규 변경사항(`CL 4404195`, *"Unify the A2UI Compose message processor factories"* 및 `A2uiMessageProcessorSamples.kt`)을 전 화면에 반영했습니다.
+
+### 1. 다중 서피스 렌더링 `key(surface.id)` 권장 패턴 적용 (`CL 4404195` `A2uiMessageProcessorSamples`)
+- **배경**:
+  - `CL 4404195`에서 `A2uiCatalog`가 `A2uiRuntimeCatalog`를 직접 상속하고 `a2uiRuntimeMessageProcessor`가 `androidx.a2ui.compose.runtime.A2uiMessageProcessor`로 일원화되며, 신규 공식 샘플 `A2uiMessageProcessorSamples.kt`가 추가됨.
+  - 공식 샘플에서 `processor.activeSurfaces` 리스트를 순회하며 렌더링할 때 서피스 추가/삭제/재정렬 시에도 서피스별 Compose 상태가 보존되도록 `key(surface.id) { ... }`로 감싸는 패턴이 정립됨.
+- **적용 내역**:
+  - 5대 도메인 시나리오 화면(`CurrencyExchangeDemo.kt`, `IncidentCommanderDemo.kt`, `ContextualCockpitDemo.kt`, `DynamicMashupSheetDemo.kt`, `FieldDiagnosticsWizardDemo.kt`) 및 3개 Lab 화면(`Spec10BridgeLabScreen.kt`, `CatalogEvolutionLabScreen.kt`, `ChaosMonkeySelfHealingLabScreen.kt`)의 `activeSurfaces` 렌더링 루프 전수에 `key(surface.id)` 적용.
+
+---
+
 ## [2026-10-30] AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16770660`) 최신 머지 변경사항 반영
 
 AOSP `androidx-main` 최신 스냅샷(Build `16770660`) 및 최종 머지된 `CL 4390685` (Rev 10, `8988cf973ec`, *"Address API council feedback on the A2UI Compose runtime APIs"*), `CL 4346347` (Rev 3, `0c64eb99618`, *"Only open http, https, mailto and tel URLs in A2UI openUrl"*)의 공식 샘플 계약(`compose-runtime-samples`)을 스키마, 컴포넌트, 테스트 스위트에 반영했습니다.

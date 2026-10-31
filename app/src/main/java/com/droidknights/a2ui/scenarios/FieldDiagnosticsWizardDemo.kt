@@ -170,10 +170,12 @@ fun FieldDiagnosticsWizardDemo() {
         },
     ) {
         activeSurfaces.forEach { surface ->
-            A2uiSurface(
-                surfaceModel = surface,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            androidx.compose.runtime.key(surface.id) {
+                A2uiSurface(
+                    surfaceModel = surface,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }
