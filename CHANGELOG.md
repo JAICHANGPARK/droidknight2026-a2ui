@@ -4,6 +4,34 @@
 
 ---
 
+## [2026-11-02] Release 2026.11.2 · AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16794113`) 및 인터랙티브 모바일 뱅킹 통합 릴리스
+
+`2026.11.2` 정식 릴리스를 위해 AOSP `androidx-main` 최신 스냅샷(Build `16794113`) 동기화, 인터랙티브 모바일 뱅킹 홈 및 실제 Gemini REST API 연동, As-Is vs To-Be 아키텍처 대조 모드, 그리고 문서 표준화 작업을 완료했습니다.
+
+### 1. 인터랙티브 모바일 뱅킹 홈 및 실전 모달 시트 (`BankingHomeScreen`, `BankingAppState`, `BankingRealModals`)
+- **적용 내역**:
+  - `BankingHomeScreen.kt`, `BankingAppState.kt`, `BankingRealModals.kt` 추가.
+  - 상단 검색/알림/QR 바, 주계좌 잔액 카드(KRW 숨김 토글, 계좌번호 복사, 즉시 이체, 거래내역 조회), 외화 지갑(USD/JPY/EUR 실시간 환전 연동), 그리고 5개 실무 도메인 서비스 퀵 그리드를 하나의 모바일 뱅킹 슈퍼앱 경험으로 통합.
+  - 원화 즉시 이체, 입출금 거래내역 필터링, QR/바코드 현장 스캔, 실시간 알림 센터 등 실제 상태 변이를 수행하는 네이티브 바텀시트 모달 구현.
+
+### 2. 실시간 Gemini REST API 클라이언트 및 온디바이스 폴백 (`A2uiGeminiApiClient`, `A2uiAgentChatScaffold`)
+- **적용 내역**:
+  - `A2uiGeminiApiClient.kt` 및 `A2uiAgentChatScaffold.kt` 추가.
+  - `local.properties`에 `GEMINI_API_KEY` 설정 시 실제 Gemini(`gemini-2.5-flash`) REST API를 호출하여 카탈로그의 `toJsonSchemaString()`과 시스템 프롬프트를 기반으로 실시간 A2UI JSONL(`createSurface`, `updateDataModel`, `updateComponents`)을 생성하고 스트리밍 주입.
+  - API 키 미설정 또는 오프라인 발표 환경에서는 시나리오별 결정론적 온디바이스 에이전트 응답 스트림으로 자동 폴백.
+
+### 3. 5대 실무 도메인 As-Is (전통적 명령형 화면) vs To-Be (A2UI 에이전트 화면) 실시간 비교
+- **적용 내역**:
+  - `legacy/LegacyComparisonToggle.kt` 및 5개 도메인별 레거시 화면(`LegacyCurrencyExchangeScreen.kt`, `LegacyIncidentCommanderScreen.kt`, `LegacyContextualCockpitScreen.kt`, `LegacyDynamicMashupScreen.kt`, `LegacyFieldDiagnosticsScreen.kt`) 구현.
+  - 모든 시나리오 상단에서 As-Is(정적 폼/다단계 모달/하드코딩 뷰)와 To-Be(A2UI 선언형 서피스 스트리밍 및 양방향 바인딩)를 즉시 전환하며 코드 복잡도와 UX 차이를 대조 가능.
+
+### 4. AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16794113`) 최신 스펙 동기화 및 문서 정비
+- **적용 내역**:
+  - 공식 `androidx.a2ui` 6개 모듈(`core`, `compose-runtime`, `compose-schema`, `compose-testing`, `compose-ui-tooling-preview`, `material3-a2ui`) 최신 스냅샷(`16794113`) 검증 완료.
+  - `README.md` 및 `CHANGELOG.md` 내 모든 이모티콘과 em dash를 제거하고 최신 프로젝트 디렉토리 구조 및 빌드 가이드를 반영.
+
+---
+
 ## [2026-10-31] AOSP `androidx-main` (`1.0.0-SNAPSHOT`, Build `16786775`) 및 `CL 4404195` 최신 변경사항 반영
 
 AOSP `androidx-main` 최신 스냅샷(Build `16786775`)과 Gerrit 신규 변경사항(`CL 4404195`, *"Unify the A2UI Compose message processor factories"* 및 `A2uiMessageProcessorSamples.kt`)을 전 화면에 반영했습니다.
@@ -139,7 +167,7 @@ A2UI 오픈소스 표준 사양(Spec 1.0 Candidate)과 구글 공식 `androidx.a
 
 ### 3. Lab 0 인터랙티브 쇼케이스 화면
 - **파일**: `app/src/main/java/com/droidknights/a2ui/labs/Spec10BridgeLabScreen.kt`, `app/src/main/java/com/droidknights/a2ui/MainActivity.kt`
-  - 메인 탭에 `"🚀 Lab 0. Spec 1.0 차세대 브릿지"` 추가.
+  - 메인 탭에 `"Lab 0. Spec 1.0 차세대 브릿지"` 추가.
   - **와이어 페이로드 실시간 비교 뷰**:
     - ① 에이전트가 송신한 순수 A2UI Spec 1.0 원본 JSONL (인라인 createSurface, `@path`, `@call`)
     - ② 브릿지가 디슈가링하여 AndroidX 엔진으로 주입한 v0.9.1 메시지 시퀀스를 듀얼 콘솔로 확인 가능.
