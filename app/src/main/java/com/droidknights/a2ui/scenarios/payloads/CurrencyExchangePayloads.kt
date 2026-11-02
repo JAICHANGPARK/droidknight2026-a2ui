@@ -264,18 +264,20 @@ object CurrencyExchangePayloads {
         return when (caseIndex) {
             0 -> {
                 val updateData =
-                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"currency":"JPY","jpyAmount":50000,"krwAmount":423940,"branch":["ICN_T1"],"coupon90":true}}}"""
+                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"currency":"JPY","jpyAmount":50000,"krwAmount":423940,"branch":["ICN_T1"],"coupon90":true,"agreeForexTerms":false,"agreePickupTerms":false}}}"""
                 val updateComponents =
                     """
                     {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[
                       {"id":"root","component":"Column","children":["exchange_card"]},
                       {"id":"exchange_card","component":"Card","child":"card_col"},
-                      {"id":"card_col","component":"Column","children":["title","exchange_converter","branch_picker","coupon_chk","btn_submit"]},
+                      {"id":"card_col","component":"Column","children":["title","exchange_converter","branch_picker","coupon_chk","terms_forex_chk","terms_pickup_chk","btn_submit"]},
                       {"id":"title","component":"Text","text":"💴 50,000 JPY 환전 (90% 우대)"},
-                      {"id":"exchange_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"환전 금액","exchangeRate":847.88,"unitScale":100,"foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"}},
+                      {"id":"exchange_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"환전 금액","exchangeRate":847.88,"unitScale":100,"minAmount":1000,"banknoteUnit":1000,"foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"},"checks":[{"condition":{"call":"banknoteDenomination","args":{"value":{"path":"/exchange/jpyAmount"},"min":1000,"unit":1000}},"message":"엔화는 최소 1,000 JPY 이상, 1,000엔 지폐 단위로만 신청 가능합니다 (500엔 동전 불가)."}]},
                       {"id":"branch_picker","component":"ChoicePicker","label":"수령처","variant":"mutuallyExclusive","options":[{"label":"인천공항 1터미널","value":"ICN_T1"},{"label":"인천공항 2터미널","value":"ICN_T2"}],"value":{"path":"/exchange/branch"}},
                       {"id":"coupon_chk","component":"CheckBox","label":"주거래 통장 출금 · 90% 우대","value":{"path":"/exchange/coupon90"}},
-                      {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"jpy_airport_oneshot","currency":"JPY","foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"},"branch":{"path":"/exchange/branch"},"coupon90":{"path":"/exchange/coupon90"}}}}},
+                      {"id":"terms_forex_chk","component":"CheckBox","label":"[필수] 외국환거래법 및 인터넷 환전 유의사항 동의","value":{"path":"/exchange/agreeForexTerms"},"checks":[{"condition":{"path":"/exchange/agreeForexTerms"},"message":"외국환거래법 및 인터넷 환전 유의사항 필수 동의가 필요합니다."}]},
+                      {"id":"terms_pickup_chk","component":"CheckBox","label":"[필수] 공항 여권 지참 및 미수령 환불 규정 동의","value":{"path":"/exchange/agreePickupTerms"},"checks":[{"condition":{"path":"/exchange/agreePickupTerms"},"message":"공항 수령 및 환불 규정 필수 동의가 필요합니다."}]},
+                      {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"jpy_airport_oneshot","currency":"JPY","foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"},"branch":{"path":"/exchange/branch"},"coupon90":{"path":"/exchange/coupon90"},"agreeForexTerms":{"path":"/exchange/agreeForexTerms"},"agreePickupTerms":{"path":"/exchange/agreePickupTerms"}}}}},
                       {"id":"btn_txt","component":"Text","text":"환전 신청하기"}
                     ]}}
                     """.trimIndent().replace("\n", "")
@@ -344,18 +346,20 @@ object CurrencyExchangePayloads {
 
             4 -> {
                 val updateData =
-                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"usdAmount":1200,"usdKrwAmount":1602960,"smallBillRatio":40,"tipPackIncluded":true}}}"""
+                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"usdAmount":1200,"usdKrwAmount":1602960,"smallBillRatio":40,"tipPackIncluded":true,"agreeForexTerms":false,"agreePickupTerms":false}}}"""
                 val updateComponents =
                     """
                     {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[
                       {"id":"root","component":"Column","children":["exchange_card"]},
                       {"id":"exchange_card","component":"Card","child":"card_col"},
-                      {"id":"card_col","component":"Column","children":["title","usd_converter","small_slider","tip_chk","btn_submit"]},
+                      {"id":"card_col","component":"Column","children":["title","usd_converter","small_slider","tip_chk","terms_forex_chk","terms_pickup_chk","btn_submit"]},
                       {"id":"title","component":"Text","text":"💵 1,200 USD 소액권 환전"},
-                      {"id":"usd_converter","component":"BidirectionalExchangeInput","currencyCode":"USD","currencyLabel":"환전 금액","exchangeRate":1335.80,"unitScale":1,"foreignAmount":{"path":"/exchange/usdAmount"},"krwAmount":{"path":"/exchange/usdKrwAmount"}},
+                      {"id":"usd_converter","component":"BidirectionalExchangeInput","currencyCode":"USD","currencyLabel":"환전 금액","exchangeRate":1335.80,"unitScale":1,"minAmount":10,"banknoteUnit":1,"foreignAmount":{"path":"/exchange/usdAmount"},"krwAmount":{"path":"/exchange/usdKrwAmount"},"checks":[{"condition":{"call":"banknoteDenomination","args":{"value":{"path":"/exchange/usdAmount"},"min":10,"unit":1}},"message":"미국 달러는 최소 10 USD 이상, 1달러 지폐 단위로만 신청 가능합니다."}]},
                       {"id":"small_slider","component":"Slider","label":"소액권 비중 (%)","value":{"path":"/exchange/smallBillRatio"},"min":10,"max":70},
                       {"id":"tip_chk","component":"CheckBox","label":"1달러 신권 30장 포함","value":{"path":"/exchange/tipPackIncluded"}},
-                      {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"usd_small_bills","currency":"USD","foreignAmount":{"path":"/exchange/usdAmount"},"krwAmount":{"path":"/exchange/usdKrwAmount"},"smallBillRatio":{"path":"/exchange/smallBillRatio"},"tipPackIncluded":{"path":"/exchange/tipPackIncluded"}}}}},
+                      {"id":"terms_forex_chk","component":"CheckBox","label":"[필수] 외국환거래법 및 인터넷 환전 유의사항 동의","value":{"path":"/exchange/agreeForexTerms"},"checks":[{"condition":{"path":"/exchange/agreeForexTerms"},"message":"외국환거래법 및 인터넷 환전 유의사항 필수 동의가 필요합니다."}]},
+                      {"id":"terms_pickup_chk","component":"CheckBox","label":"[필수] 공항 여권 지참 및 미수령 환불 규정 동의","value":{"path":"/exchange/agreePickupTerms"},"checks":[{"condition":{"path":"/exchange/agreePickupTerms"},"message":"공항 수령 및 환불 규정 필수 동의가 필요합니다."}]},
+                      {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"usd_small_bills","currency":"USD","foreignAmount":{"path":"/exchange/usdAmount"},"krwAmount":{"path":"/exchange/usdKrwAmount"},"smallBillRatio":{"path":"/exchange/smallBillRatio"},"tipPackIncluded":{"path":"/exchange/tipPackIncluded"},"agreeForexTerms":{"path":"/exchange/agreeForexTerms"},"agreePickupTerms":{"path":"/exchange/agreePickupTerms"}}}}},
                       {"id":"btn_txt","component":"Text","text":"환전 신청하기"}
                     ]}}
                     """.trimIndent().replace("\n", "")
@@ -364,18 +368,20 @@ object CurrencyExchangePayloads {
 
             5 -> {
                 val updateData =
-                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"targetRate":900,"autoJpyAmount":100000,"autoKrwAmount":900000,"pushAlert":true}}}"""
+                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"targetRate":900,"autoJpyAmount":100000,"autoKrwAmount":900000,"pushAlert":true,"agreeForexTerms":false,"agreePickupTerms":false}}}"""
                 val updateComponents =
                     """
                     {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[
                       {"id":"root","component":"Column","children":["exchange_card"]},
                       {"id":"exchange_card","component":"Card","child":"card_col"},
-                      {"id":"card_col","component":"Column","children":["title","target_slider","jpy_converter","push_chk","btn_submit"]},
+                      {"id":"card_col","component":"Column","children":["title","target_slider","jpy_converter","push_chk","terms_forex_chk","terms_pickup_chk","btn_submit"]},
                       {"id":"title","component":"Text","text":"📉 엔화 목표환율 예약"},
                       {"id":"target_slider","component":"Slider","label":"목표 환율 (100엔당 원)","value":{"path":"/exchange/targetRate"},"min":860,"max":920},
-                      {"id":"jpy_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"예약 금액","exchangeRate":900.0,"unitScale":100,"foreignAmount":{"path":"/exchange/autoJpyAmount"},"krwAmount":{"path":"/exchange/autoKrwAmount"}},
+                      {"id":"jpy_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"예약 금액","exchangeRate":900.0,"unitScale":100,"minAmount":1000,"banknoteUnit":1000,"foreignAmount":{"path":"/exchange/autoJpyAmount"},"krwAmount":{"path":"/exchange/autoKrwAmount"},"checks":[{"condition":{"call":"banknoteDenomination","args":{"value":{"path":"/exchange/autoJpyAmount"},"min":1000,"unit":1000}},"message":"엔화는 최소 1,000 JPY 이상, 1,000엔 지폐 단위로만 예약 가능합니다."}]},
                       {"id":"push_chk","component":"CheckBox","label":"체결 시 알림 받기","value":{"path":"/exchange/pushAlert"}},
-                      {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"auto_target_rate","currency":"JPY","targetRate":{"path":"/exchange/targetRate"},"foreignAmount":{"path":"/exchange/autoJpyAmount"},"krwAmount":{"path":"/exchange/autoKrwAmount"}}}}},
+                      {"id":"terms_forex_chk","component":"CheckBox","label":"[필수] 외국환거래법 및 인터넷 환전 유의사항 동의","value":{"path":"/exchange/agreeForexTerms"},"checks":[{"condition":{"path":"/exchange/agreeForexTerms"},"message":"외국환거래법 및 인터넷 환전 유의사항 필수 동의가 필요합니다."}]},
+                      {"id":"terms_pickup_chk","component":"CheckBox","label":"[필수] 공항 여권 지참 및 미수령 환불 규정 동의","value":{"path":"/exchange/agreePickupTerms"},"checks":[{"condition":{"path":"/exchange/agreePickupTerms"},"message":"공항 수령 및 환불 규정 필수 동의가 필요합니다."}]},
+                      {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"auto_target_rate","currency":"JPY","targetRate":{"path":"/exchange/targetRate"},"foreignAmount":{"path":"/exchange/autoJpyAmount"},"krwAmount":{"path":"/exchange/autoKrwAmount"},"agreeForexTerms":{"path":"/exchange/agreeForexTerms"},"agreePickupTerms":{"path":"/exchange/agreePickupTerms"}}}}},
                       {"id":"btn_txt","component":"Text","text":"예약하기"}
                     ]}}
                     """.trimIndent().replace("\n", "")
@@ -404,18 +410,20 @@ object CurrencyExchangePayloads {
 
             else -> {
                 val updateData =
-                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"sellJpyAmount":18000,"sellKrwAmount":162180,"billsOnlyConfirmed":true,"depositAccount":"110-482-910284"}}}"""
+                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"sellJpyAmount":18000,"sellKrwAmount":162180,"billsOnlyConfirmed":true,"depositAccount":"110-482-910284","agreeForexTerms":false,"agreePickupTerms":false}}}"""
                 val updateComponents =
                     """
                     {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[
                       {"id":"root","component":"Column","children":["exchange_card"]},
                       {"id":"exchange_card","component":"Card","child":"card_col"},
-                      {"id":"card_col","component":"Column","children":["title","sell_converter","Deposit_tf","bills_chk","btn_submit"]},
+                      {"id":"card_col","component":"Column","children":["title","sell_converter","Deposit_tf","bills_chk","terms_forex_chk","terms_pickup_chk","btn_submit"]},
                       {"id":"title","component":"Text","text":"🔄 18,000 JPY 원화 재환전"},
-                      {"id":"sell_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"재환전 금액","exchangeRate":901.0,"unitScale":100,"foreignAmount":{"path":"/exchange/sellJpyAmount"},"krwAmount":{"path":"/exchange/sellKrwAmount"}},
+                      {"id":"sell_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"재환전 금액","exchangeRate":901.0,"unitScale":100,"minAmount":1000,"banknoteUnit":1000,"foreignAmount":{"path":"/exchange/sellJpyAmount"},"krwAmount":{"path":"/exchange/sellKrwAmount"},"checks":[{"condition":{"call":"banknoteDenomination","args":{"value":{"path":"/exchange/sellJpyAmount"},"min":1000,"unit":1000}},"message":"엔화 동전(500엔 이하)은 재환전이 불가하며 1,000엔 지폐 단위로만 가능합니다."}]},
                       {"id":"Deposit_tf","component":"TextField","label":"입금 계좌","value":{"path":"/exchange/depositAccount"}},
                       {"id":"bills_chk","component":"CheckBox","label":"80% 환율 우대 적용","value":{"path":"/exchange/billsOnlyConfirmed"}},
-                      {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"sell_remaining_jpy","currency":"JPY","foreignAmount":{"path":"/exchange/sellJpyAmount"},"krwAmount":{"path":"/exchange/sellKrwAmount"},"depositAccount":{"path":"/exchange/depositAccount"}}}}},
+                      {"id":"terms_forex_chk","component":"CheckBox","label":"[필수] 외국환거래법 및 인터넷 환전 유의사항 동의","value":{"path":"/exchange/agreeForexTerms"},"checks":[{"condition":{"path":"/exchange/agreeForexTerms"},"message":"외국환거래법 및 인터넷 환전 유의사항 필수 동의가 필요합니다."}]},
+                      {"id":"terms_pickup_chk","component":"CheckBox","label":"[필수] 외화 현찰 재매도 및 계좌 입금 약관 동의","value":{"path":"/exchange/agreePickupTerms"},"checks":[{"condition":{"path":"/exchange/agreePickupTerms"},"message":"외화 현찰 재매도 약관 필수 동의가 필요합니다."}]},
+                      {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"sell_remaining_jpy","currency":"JPY","foreignAmount":{"path":"/exchange/sellJpyAmount"},"krwAmount":{"path":"/exchange/sellKrwAmount"},"depositAccount":{"path":"/exchange/depositAccount"},"agreeForexTerms":{"path":"/exchange/agreeForexTerms"},"agreePickupTerms":{"path":"/exchange/agreePickupTerms"}}}}},
                       {"id":"btn_txt","component":"Text","text":"재환전 신청하기"}
                     ]}}
                     """.trimIndent().replace("\n", "")
@@ -502,33 +510,41 @@ object CurrencyExchangePayloads {
         // 5. 외화 환전 관련 문의 (엔화, 달러, 유로, 프랑, 목표환율, 재환전 — 자연어에서 금액·통화·터미널 동적 추출!)
         val parsedExchangeAmount = parseForeignAmountFromQuery(q)
         if (q.contains("목표") || q.contains("자동") || q.contains("예약") || q.contains("900원")) {
-            val autoJpy = parsedExchangeAmount ?: 100_000L
+            val rawJpy = parsedExchangeAmount ?: 100_000L
+            val (autoJpy, note) = normalizeToBanknoteAmount("JPY", rawJpy)
             val autoKrw = kotlin.math.round(autoJpy * 9.0).toLong()
             val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
-            val reply = "100엔당 900원 이하일 때 ${fmt.format(autoJpy)} JPY (${fmt.format(autoKrw)}원) 자동 환전 예약입니다."
+            val reply =
+                if (note != null) "$note 100엔당 900원 이하일 때 ${fmt.format(autoJpy)} JPY (${fmt.format(autoKrw)}원) 자동 환전 예약입니다."
+                else "100엔당 900원 이하일 때 ${fmt.format(autoJpy)} JPY (${fmt.format(autoKrw)}원) 자동 환전 예약입니다."
             val updateData =
-                """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"targetRate":900,"autoJpyAmount":$autoJpy,"autoKrwAmount":$autoKrw,"pushAlert":true}}}"""
+                """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"targetRate":900,"autoJpyAmount":$autoJpy,"autoKrwAmount":$autoKrw,"pushAlert":true,"agreeForexTerms":false,"agreePickupTerms":false}}}"""
             val updateComponents = buildJsonl(5)[2]
             return reply to listOf(createSurface, updateData, updateComponents)
         }
         if (q.contains("재환전") || q.contains("남은") || q.contains("현찰")) {
-            val sellJpy = parsedExchangeAmount ?: 18_000L
+            val rawSellJpy = parsedExchangeAmount ?: 18_000L
+            val (sellJpy, note) = normalizeToBanknoteAmount("JPY", rawSellJpy)
             val sellKrw = kotlin.math.round((sellJpy / 100.0) * 901.0).toLong()
             val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
-            val reply = "${fmt.format(sellJpy)} JPY 원화 재환전(80% 우대 · ${fmt.format(sellKrw)}원 입금 예정)입니다."
+            val reply =
+                if (note != null) "$note ${fmt.format(sellJpy)} JPY 원화 재환전(80% 우대 · ${fmt.format(sellKrw)}원 입금 예정)입니다."
+                else "${fmt.format(sellJpy)} JPY 원화 재환전(80% 우대 · ${fmt.format(sellKrw)}원 입금 예정)입니다."
             val updateData =
-                """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"sellJpyAmount":$sellJpy,"sellKrwAmount":$sellKrw,"billsOnlyConfirmed":true,"depositAccount":"110-482-910284"}}}"""
+                """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"sellJpyAmount":$sellJpy,"sellKrwAmount":$sellKrw,"billsOnlyConfirmed":true,"depositAccount":"110-482-910284","agreeForexTerms":false,"agreePickupTerms":false}}}"""
             val updateComponents =
                 """
                 {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[
                   {"id":"root","component":"Column","children":["exchange_card"]},
                   {"id":"exchange_card","component":"Card","child":"card_col"},
-                  {"id":"card_col","component":"Column","children":["title","sell_converter","Deposit_tf","bills_chk","btn_submit"]},
+                  {"id":"card_col","component":"Column","children":["title","sell_converter","Deposit_tf","bills_chk","terms_forex_chk","terms_pickup_chk","btn_submit"]},
                   {"id":"title","component":"Text","text":"🔄 ${fmt.format(sellJpy)} JPY 원화 재환전"},
-                  {"id":"sell_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"재환전 금액","exchangeRate":901.0,"unitScale":100,"foreignAmount":{"path":"/exchange/sellJpyAmount"},"krwAmount":{"path":"/exchange/sellKrwAmount"}},
+                  {"id":"sell_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"재환전 금액","exchangeRate":901.0,"unitScale":100,"minAmount":1000,"banknoteUnit":1000,"foreignAmount":{"path":"/exchange/sellJpyAmount"},"krwAmount":{"path":"/exchange/sellKrwAmount"},"checks":[{"condition":{"call":"banknoteDenomination","args":{"value":{"path":"/exchange/sellJpyAmount"},"min":1000,"unit":1000}},"message":"엔화 동전(500엔 이하)은 재환전이 불가하며 1,000엔 지폐 단위로만 가능합니다."}]},
                   {"id":"Deposit_tf","component":"TextField","label":"입금 계좌","value":{"path":"/exchange/depositAccount"}},
                   {"id":"bills_chk","component":"CheckBox","label":"80% 환율 우대 적용","value":{"path":"/exchange/billsOnlyConfirmed"}},
-                  {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"sell_remaining_jpy","currency":"JPY","foreignAmount":{"path":"/exchange/sellJpyAmount"},"krwAmount":{"path":"/exchange/sellKrwAmount"},"depositAccount":{"path":"/exchange/depositAccount"}}}}},
+                  {"id":"terms_forex_chk","component":"CheckBox","label":"[필수] 외국환거래법 및 인터넷 환전 유의사항 동의","value":{"path":"/exchange/agreeForexTerms"},"checks":[{"condition":{"path":"/exchange/agreeForexTerms"},"message":"외국환거래법 및 인터넷 환전 유의사항 필수 동의가 필요합니다."}]},
+                  {"id":"terms_pickup_chk","component":"CheckBox","label":"[필수] 외화 현찰 재매도 및 계좌 입금 약관 동의","value":{"path":"/exchange/agreePickupTerms"},"checks":[{"condition":{"path":"/exchange/agreePickupTerms"},"message":"외화 현찰 재매도 약관 필수 동의가 필요합니다."}]},
+                  {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"sell_remaining_jpy","currency":"JPY","foreignAmount":{"path":"/exchange/sellJpyAmount"},"krwAmount":{"path":"/exchange/sellKrwAmount"},"depositAccount":{"path":"/exchange/depositAccount"},"agreeForexTerms":{"path":"/exchange/agreeForexTerms"},"agreePickupTerms":{"path":"/exchange/agreePickupTerms"}}}}},
                   {"id":"btn_txt","component":"Text","text":"재환전 신청하기"}
                 ]}}
                 """.trimIndent().replace("\n", "")
@@ -555,32 +571,45 @@ object CurrencyExchangePayloads {
                     "CHF" -> "🇨🇭"
                     else -> "💵"
                 }
-            val foreignAmt = parsedExchangeAmount ?: 1_200L
+            val rawForeignAmt = parsedExchangeAmount ?: 1_200L
+            val (foreignAmt, note) = normalizeToBanknoteAmount(currencyCode, rawForeignAmt)
             val krwAmt = kotlin.math.round(foreignAmt * rate).toLong()
+            val minAmt = 10L
+            val unitAmt =
+                when (currencyCode) {
+                    "EUR" -> 5L
+                    "CHF" -> 10L
+                    else -> 1L
+                }
             val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
             val fmtForeign = fmt.format(foreignAmt)
             val fmtKrw = fmt.format(krwAmt)
-            val reply = "$fmtForeign $currencyCode (${fmtKrw}원) 환전 정보를 확인해 주세요."
+            val reply =
+                if (note != null) "$note $fmtForeign $currencyCode (${fmtKrw}원) 환전 정보를 확인해 주세요."
+                else "$fmtForeign $currencyCode (${fmtKrw}원) 환전 정보를 확인해 주세요."
             val updateData =
-                """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"usdAmount":$foreignAmt,"usdKrwAmount":$krwAmt,"smallBillRatio":40,"tipPackIncluded":true}}}"""
+                """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"usdAmount":$foreignAmt,"usdKrwAmount":$krwAmt,"smallBillRatio":40,"tipPackIncluded":true,"agreeForexTerms":false,"agreePickupTerms":false}}}"""
             val updateComponents =
                 """
                 {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[
                   {"id":"root","component":"Column","children":["exchange_card"]},
                   {"id":"exchange_card","component":"Card","child":"card_col"},
-                  {"id":"card_col","component":"Column","children":["title","usd_converter","small_slider","tip_chk","btn_submit"]},
+                  {"id":"card_col","component":"Column","children":["title","usd_converter","small_slider","tip_chk","terms_forex_chk","terms_pickup_chk","btn_submit"]},
                   {"id":"title","component":"Text","text":"$emoji $fmtForeign $currencyCode 소액권 환전"},
-                  {"id":"usd_converter","component":"BidirectionalExchangeInput","currencyCode":"$currencyCode","currencyLabel":"환전 금액","exchangeRate":$rate,"unitScale":1,"foreignAmount":{"path":"/exchange/usdAmount"},"krwAmount":{"path":"/exchange/usdKrwAmount"}},
+                  {"id":"usd_converter","component":"BidirectionalExchangeInput","currencyCode":"$currencyCode","currencyLabel":"환전 금액","exchangeRate":$rate,"unitScale":1,"minAmount":$minAmt,"banknoteUnit":$unitAmt,"foreignAmount":{"path":"/exchange/usdAmount"},"krwAmount":{"path":"/exchange/usdKrwAmount"},"checks":[{"condition":{"call":"banknoteDenomination","args":{"value":{"path":"/exchange/usdAmount"},"min":$minAmt,"unit":$unitAmt}},"message":"최소 $minAmt $currencyCode 이상, $unitAmt $currencyCode 지폐 단위로만 신청 가능합니다."}]},
                   {"id":"small_slider","component":"Slider","label":"소액권 비중 (%)","value":{"path":"/exchange/smallBillRatio"},"min":10,"max":70},
                   {"id":"tip_chk","component":"CheckBox","label":"소액 신권 우대 포함","value":{"path":"/exchange/tipPackIncluded"}},
-                  {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"usd_small_bills","currency":"$currencyCode","foreignAmount":{"path":"/exchange/usdAmount"},"krwAmount":{"path":"/exchange/usdKrwAmount"},"smallBillRatio":{"path":"/exchange/smallBillRatio"},"tipPackIncluded":{"path":"/exchange/tipPackIncluded"}}}}},
+                  {"id":"terms_forex_chk","component":"CheckBox","label":"[필수] 외국환거래법 및 인터넷 환전 유의사항 동의","value":{"path":"/exchange/agreeForexTerms"},"checks":[{"condition":{"path":"/exchange/agreeForexTerms"},"message":"외국환거래법 및 인터넷 환전 유의사항 필수 동의가 필요합니다."}]},
+                  {"id":"terms_pickup_chk","component":"CheckBox","label":"[필수] 공항 여권 지참 및 미수령 환불 규정 동의","value":{"path":"/exchange/agreePickupTerms"},"checks":[{"condition":{"path":"/exchange/agreePickupTerms"},"message":"공항 수령 및 환불 규정 필수 동의가 필요합니다."}]},
+                  {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"usd_small_bills","currency":"$currencyCode","foreignAmount":{"path":"/exchange/usdAmount"},"krwAmount":{"path":"/exchange/usdKrwAmount"},"smallBillRatio":{"path":"/exchange/smallBillRatio"},"tipPackIncluded":{"path":"/exchange/tipPackIncluded"},"agreeForexTerms":{"path":"/exchange/agreeForexTerms"},"agreePickupTerms":{"path":"/exchange/agreePickupTerms"}}}}},
                   {"id":"btn_txt","component":"Text","text":"환전 신청하기"}
                 ]}}
                 """.trimIndent().replace("\n", "")
             return reply to listOf(createSurface, updateData, updateComponents)
         }
         if (q.contains("엔") || q.contains("jpy") || q.contains("환전") || q.contains("인천공항")) {
-            val jpyAmt = parsedExchangeAmount ?: 50_000L
+            val rawJpyAmt = parsedExchangeAmount ?: 50_000L
+            val (jpyAmt, note) = normalizeToBanknoteAmount("JPY", rawJpyAmt)
             val krwAmt = kotlin.math.round((jpyAmt / 100.0) * 847.88).toLong()
             val branchCode =
                 if (q.contains("2터미널") || q.contains("제2터미널") || q.contains("t2")) "ICN_T2"
@@ -588,20 +617,24 @@ object CurrencyExchangePayloads {
             val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
             val fmtJpy = fmt.format(jpyAmt)
             val fmtKrw = fmt.format(krwAmt)
-            val reply = "$fmtJpy JPY(90% 우대 · ${fmtKrw}원) 환전 정보를 확인해 주세요."
+            val reply =
+                if (note != null) "$note $fmtJpy JPY(90% 우대 · ${fmtKrw}원) 환전 정보를 확인해 주세요."
+                else "$fmtJpy JPY(90% 우대 · ${fmtKrw}원) 환전 정보를 확인해 주세요."
             val updateData =
-                """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"currency":"JPY","jpyAmount":$jpyAmt,"krwAmount":$krwAmt,"branch":["$branchCode"],"coupon90":true}}}"""
+                """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"currency":"JPY","jpyAmount":$jpyAmt,"krwAmount":$krwAmt,"branch":["$branchCode"],"coupon90":true,"agreeForexTerms":false,"agreePickupTerms":false}}}"""
             val updateComponents =
                 """
                 {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[
                   {"id":"root","component":"Column","children":["exchange_card"]},
                   {"id":"exchange_card","component":"Card","child":"card_col"},
-                  {"id":"card_col","component":"Column","children":["title","exchange_converter","branch_picker","coupon_chk","btn_submit"]},
+                  {"id":"card_col","component":"Column","children":["title","exchange_converter","branch_picker","coupon_chk","terms_forex_chk","terms_pickup_chk","btn_submit"]},
                   {"id":"title","component":"Text","text":"💴 $fmtJpy JPY 환전 (90% 우대)"},
-                  {"id":"exchange_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"환전 금액","exchangeRate":847.88,"unitScale":100,"foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"}},
+                  {"id":"exchange_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"환전 금액","exchangeRate":847.88,"unitScale":100,"minAmount":1000,"banknoteUnit":1000,"foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"},"checks":[{"condition":{"call":"banknoteDenomination","args":{"value":{"path":"/exchange/jpyAmount"},"min":1000,"unit":1000}},"message":"엔화는 최소 1,000 JPY 이상, 1,000엔 지폐 단위로만 신청 가능합니다 (500엔 동전 불가)."}]},
                   {"id":"branch_picker","component":"ChoicePicker","label":"수령처","variant":"mutuallyExclusive","options":[{"label":"인천공항 1터미널","value":"ICN_T1"},{"label":"인천공항 2터미널","value":"ICN_T2"}],"value":{"path":"/exchange/branch"}},
                   {"id":"coupon_chk","component":"CheckBox","label":"주거래 통장 출금 · 90% 우대","value":{"path":"/exchange/coupon90"}},
-                  {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"jpy_airport_oneshot","currency":"JPY","foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"},"branch":{"path":"/exchange/branch"},"coupon90":{"path":"/exchange/coupon90"}}}}},
+                  {"id":"terms_forex_chk","component":"CheckBox","label":"[필수] 외국환거래법 및 인터넷 환전 유의사항 동의","value":{"path":"/exchange/agreeForexTerms"},"checks":[{"condition":{"path":"/exchange/agreeForexTerms"},"message":"외국환거래법 및 인터넷 환전 유의사항 필수 동의가 필요합니다."}]},
+                  {"id":"terms_pickup_chk","component":"CheckBox","label":"[필수] 공항 여권 지참 및 미수령 환불 규정 동의","value":{"path":"/exchange/agreePickupTerms"},"checks":[{"condition":{"path":"/exchange/agreePickupTerms"},"message":"공항 수령 및 환불 규정 필수 동의가 필요합니다."}]},
+                  {"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"jpy_airport_oneshot","currency":"JPY","foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"},"branch":{"path":"/exchange/branch"},"coupon90":{"path":"/exchange/coupon90"},"agreeForexTerms":{"path":"/exchange/agreeForexTerms"},"agreePickupTerms":{"path":"/exchange/agreePickupTerms"}}}}},
                   {"id":"btn_txt","component":"Text","text":"환전 신청하기"}
                 ]}}
                 """.trimIndent().replace("\n", "")
@@ -681,22 +714,34 @@ object CurrencyExchangePayloads {
     /**
      * Stage 2: Triggered when `submit_exchange` is received from the client.
      * Uses the live DataModel values transmitted in `event.context` to update `exchange_surface`
-     * with a follow-up pickup/voucher configuration card.
+     * with a follow-up pickup/voucher configuration card (matches Slide 73 Stage 2).
      */
     fun buildFollowUpVoucherStepJsonl(event: A2uiClientEventMessage): Pair<String, List<String>> {
         val ctx = event.context
         val currency = ctx["currency"]?.toString() ?: "JPY"
-        val foreignAmt = (ctx["foreignAmount"] as? Number)?.toLong() ?: 50000L
-        val krwAmt = (ctx["krwAmount"] as? Number)?.toLong() ?: 423940L
-        val branchRaw = (ctx["branch"] as? List<*>)?.firstOrNull()?.toString() ?: "ICN_T1"
+        val foreignAmt =
+            (ctx["foreignAmount"] as? Number)?.toLong()
+                ?: ctx["foreignAmount"]?.toString()?.filter { it.isDigit() }?.toLongOrNull()
+                ?: 50000L
+        val krwAmt =
+            (ctx["krwAmount"] as? Number)?.toLong()
+                ?: ctx["krwAmount"]?.toString()?.filter { it.isDigit() }?.toLongOrNull()
+                ?: 423940L
+        val branchRaw =
+            when (val b = ctx["branch"]) {
+                is List<*> -> b.firstOrNull()?.toString()
+                is String -> b
+                else -> null
+            } ?: "ICN_T1"
         val branchLabel =
             when (branchRaw) {
-                "ICN_T2" -> "인천공항 2터미널"
-                else -> "인천공항 1터미널"
+                "ICN_T2", "인천공항 2터미널", "인천국제공항 제2터미널" -> "인천공항 제2터미널"
+                else -> "인천공항 제1터미널"
             }
         val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
         val summaryValue = "${fmt.format(foreignAmt)} $currency (${fmt.format(krwAmt)}원)"
-        val agentReply = "환전이 신청되었어요. 수령 방법을 선택해 주세요."
+        val agentReply =
+            "전송된 데이터 모델($summaryValue · $branchLabel)로 환전 신청이 접수되었습니다. 수령 바우처 발급 방식을 선택해 다음 액션을 완료해 주세요."
 
         val updateData =
             """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchangeNext","value":{"summary":"$summaryValue","branchLabel":"$branchLabel","pickupMethod":["qr_kiosk"],"arrivalPush":true,"recipientPhone":"010-2026-8492"}}}"""
@@ -705,13 +750,15 @@ object CurrencyExchangePayloads {
             {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[
               {"id":"root","component":"Column","children":["exchange_next_card"]},
               {"id":"exchange_next_card","component":"Card","child":"exchange_next_col"},
-              {"id":"exchange_next_col","component":"Column","children":["next_title","next_branch_txt","picker_method","tf_phone","btn_issue_qr","btn_back_edit"]},
-              {"id":"next_title","component":"Text","text":"✅ $summaryValue"},
-              {"id":"next_branch_txt","component":"Text","text":"수령처: $branchLabel"},
-              {"id":"picker_method","component":"ChoicePicker","label":"수령 방법","variant":"mutuallyExclusive","options":[{"label":"모바일 QR (무인환전기)","value":"qr_kiosk"},{"label":"공항 창구 수령","value":"branch_counter"},{"label":"트래블카드 충전","value":"travel_card"}],"value":{"path":"/exchangeNext/pickupMethod"}},
-              {"id":"tf_phone","component":"TextField","label":"연락처","value":{"path":"/exchangeNext/recipientPhone"}},
+              {"id":"exchange_next_col","component":"Column","children":["next_title","next_summary_txt","next_branch_txt","picker_method","chk_push","tf_phone","btn_issue_qr","btn_back_edit"]},
+              {"id":"next_title","component":"Text","text":"✅ [2/2단계] 환전 접수 완료 · 수령 바우처 설정"},
+              {"id":"next_summary_txt","component":"Text","text":"💰 확정 환전 금액: $summaryValue (90% 환율 우대 · 출금 완료)"},
+              {"id":"next_branch_txt","component":"Text","text":"📍 지정 수령처: $branchLabel (접수번호 EX-2026-8492)"},
+              {"id":"picker_method","component":"ChoicePicker","label":"외화 수령 방식 선택","variant":"mutuallyExclusive","options":[{"label":"모바일 QR 바우처 (공항 무인환전기 즉시 수령)","value":"qr_kiosk"},{"label":"공항 창구 수령","value":"branch_counter"},{"label":"트래블카드 충전","value":"travel_card"}],"value":{"path":"/exchangeNext/pickupMethod"}},
+              {"id":"chk_push","component":"CheckBox","label":"출국 당일 공항 도착 시 수령 창구 위치 알림 받기","value":{"path":"/exchangeNext/arrivalPush"}},
+              {"id":"tf_phone","component":"TextField","label":"바우처 수신 연락처","value":{"path":"/exchangeNext/recipientPhone"}},
               {"id":"btn_issue_qr","component":"Button","variant":"primary","child":"btn_issue_qr_txt","action":{"event":{"name":"issue_exchange_voucher","context":{"summary":{"path":"/exchangeNext/summary"},"branchLabel":{"path":"/exchangeNext/branchLabel"},"pickupMethod":{"path":"/exchangeNext/pickupMethod"},"arrivalPush":{"path":"/exchangeNext/arrivalPush"},"recipientPhone":{"path":"/exchangeNext/recipientPhone"}}}}},
-              {"id":"btn_issue_qr_txt","component":"Text","text":"바우처 발급하기"},
+              {"id":"btn_issue_qr_txt","component":"Text","text":"모바일 수령 QR 바우처 발급 확정"},
               {"id":"btn_back_edit","component":"Button","variant":"borderless","child":"btn_back_edit_txt","action":{"event":{"name":"reset_exchange_surface","context":{"reason":"edit_again"}}}},
               {"id":"btn_back_edit_txt","component":"Text","text":"금액 다시 입력"}
             ]}}
@@ -720,34 +767,44 @@ object CurrencyExchangePayloads {
     }
 
     /**
-     * Stage 3: Triggered when `issue_exchange_voucher` is received from the client.
+     * Stage 3: Triggered when `issue_exchange_voucher` is received from the client (matches Slide 73 Stage 3).
      */
-    fun buildFinalVoucherIssuedJsonl(event: A2uiClientEventMessage): Pair<String, List<String>> {
+    fun buildFinalVoucherIssuedJsonl(
+        event: A2uiClientEventMessage,
+        voucherCode: String = "QR-EX-2026-8492",
+    ): Pair<String, List<String>> {
         val ctx = event.context
         val summary = ctx["summary"]?.toString() ?: "50,000 JPY (423,940원)"
-        val branchLabel = ctx["branchLabel"]?.toString() ?: "인천공항 1터미널"
-        val methodRaw = (ctx["pickupMethod"] as? List<*>)?.firstOrNull()?.toString() ?: "qr_kiosk"
+        val branchLabel = ctx["branchLabel"]?.toString() ?: "인천공항 제1터미널"
+        val methodRaw =
+            when (val m = ctx["pickupMethod"]) {
+                is List<*> -> m.firstOrNull()?.toString()
+                is String -> m
+                else -> null
+            } ?: "qr_kiosk"
         val methodLabel =
             when (methodRaw) {
                 "branch_counter" -> "공항 창구 수령"
                 "travel_card" -> "트래블카드 충전"
-                else -> "모바일 QR 바우처"
+                else -> "모바일 QR 바우처 (공항 무인환전기)"
             }
         val phone = ctx["recipientPhone"]?.toString() ?: "010-2026-8492"
-        val agentReply = "QR 바우처가 발급되었습니다."
+        val agentReply =
+            "모바일 수령 바우처($methodLabel)가 $phone 번호로 발급되었습니다. 공항 수령 시 QR 코드를 제시해 주세요."
 
         val updateComponents =
             """
             {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[
               {"id":"root","component":"Column","children":["exchange_done_card"]},
               {"id":"exchange_done_card","component":"Card","child":"exchange_done_col"},
-              {"id":"exchange_done_col","component":"Column","children":["done_title","done_info1","done_info2","done_info3","btn_new_exchange"]},
-              {"id":"done_title","component":"Text","text":"🎫 환전 바우처 발급 완료"},
-              {"id":"done_info1","component":"Text","text":"• 금액: $summary"},
-              {"id":"done_info2","component":"Text","text":"• 수령: $branchLabel ($methodLabel)"},
-              {"id":"done_info3","component":"Text","text":"• 연락처: $phone"},
-              {"id":"btn_new_exchange","component":"Button","variant":"borderless","child":"btn_new_exchange_txt","action":{"event":{"name":"reset_exchange_surface","context":{"reason":"new_exchange"}}}},
-              {"id":"btn_new_exchange_txt","component":"Text","text":"➕ 추가 환전 신청하기"}
+              {"id":"exchange_done_col","component":"Column","children":["done_title","done_status_txt","done_info1","done_info2","done_info3","btn_new_exchange"]},
+              {"id":"done_title","component":"Text","text":"🎫 외화 환전 및 모바일 QR 바우처 발급 완료"},
+              {"id":"done_status_txt","component":"Text","text":"• 바우처 번호: $voucherCode (발급 완료 · 수령 대기)"},
+              {"id":"done_info1","component":"Text","text":"• 확정 금액: $summary"},
+              {"id":"done_info2","component":"Text","text":"• 수령 지점 및 방식: $branchLabel · $methodLabel"},
+              {"id":"done_info3","component":"Text","text":"• 알림 발송 연락처: $phone"},
+              {"id":"btn_new_exchange","component":"Button","variant":"primary","child":"btn_new_exchange_txt","action":{"event":{"name":"reset_exchange_surface","context":{"reason":"new_exchange"}}}},
+              {"id":"btn_new_exchange_txt","component":"Text","text":"새로운 환전 신청하기"}
             ]}}
             """.trimIndent().replace("\n", "")
         return agentReply to listOf(updateComponents)
@@ -992,5 +1049,58 @@ object CurrencyExchangePayloads {
         }
 
         return null
+    }
+
+    /**
+     * Enforces real commercial bank banknote denomination & minimum exchange rules:
+     * - **JPY**: Minimum 1,000 JPY, multiples of 1,000 JPY (500/100/50/10/5/1 JPY are coins and cannot be exchanged)
+     * - **USD**: Minimum 10 USD, multiples of 1 USD (cents are coins)
+     * - **EUR**: Minimum 10 EUR, multiples of 5 EUR (1/2 EUR are coins; smallest banknote is 5 EUR)
+     * - **CHF**: Minimum 10 CHF, multiples of 10 CHF (5/2/1 CHF are coins; smallest banknote is 10 CHF)
+     */
+    internal fun normalizeToBanknoteAmount(
+        currency: String,
+        requestedAmount: Long,
+    ): Pair<Long, String?> {
+        val fmt = NumberFormat.getNumberInstance(Locale.KOREA)
+        return when (currency.uppercase()) {
+            "JPY" -> {
+                if (requestedAmount < 1_000L) {
+                    1_000L to "💡 일본 엔화는 500엔 이하가 동전(주화)이므로 지폐 최소 권종인 1,000엔 단위로만 환전이 가능하여 최소 신청 금액인 1,000 JPY로 자동 보정했습니다."
+                } else if (requestedAmount % 1_000L != 0L) {
+                    val rounded = ((requestedAmount + 500L) / 1_000L) * 1_000L
+                    rounded to "💡 엔화 ${fmt.format(requestedAmount % 1_000L)}엔 단위는 동전(주화)이므로 지폐 최소 권종(1,000엔권) 단위에 맞춰 ${fmt.format(rounded)} JPY로 자동 보정했습니다."
+                } else {
+                    requestedAmount to null
+                }
+            }
+            "EUR" -> {
+                if (requestedAmount < 10L) {
+                    10L to "💡 유로화는 1·2유로가 동전(주화)이고 최소 지폐가 5유로권이므로 최소 신청 금액인 10 EUR로 자동 보정했습니다."
+                } else if (requestedAmount % 5L != 0L) {
+                    val rounded = ((requestedAmount + 2L) / 5L) * 5L
+                    rounded to "💡 유로화는 5유로권 지폐 단위로만 환전이 가능하여 ${fmt.format(rounded)} EUR로 자동 보정했습니다."
+                } else {
+                    requestedAmount to null
+                }
+            }
+            "CHF" -> {
+                if (requestedAmount < 10L) {
+                    10L to "💡 스위스 프랑은 5프랑 이하가 동전(주화)이고 최소 지폐가 10프랑권이므로 최소 신청 금액인 10 CHF로 자동 보정했습니다."
+                } else if (requestedAmount % 10L != 0L) {
+                    val rounded = ((requestedAmount + 5L) / 10L) * 10L
+                    rounded to "💡 스위스 프랑은 10프랑권 지폐 단위로만 환전이 가능하여 ${fmt.format(rounded)} CHF로 자동 보정했습니다."
+                } else {
+                    requestedAmount to null
+                }
+            }
+            else -> {
+                if (requestedAmount < 10L) {
+                    10L to "💡 미국 달러 모바일 환전 최소 신청 금액은 10 USD 이상(1달러 지폐 단위)이므로 10 USD로 자동 보정했습니다."
+                } else {
+                    requestedAmount to null
+                }
+            }
+        }
     }
 }

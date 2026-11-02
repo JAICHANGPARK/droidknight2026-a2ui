@@ -3,6 +3,7 @@ package com.droidknights.a2ui.catalog
 import androidx.a2ui.compose.ui.A2uiCatalog
 import androidx.a2ui.compose.ui.A2uiComponent
 import androidx.a2ui.compose.ui.catalog.A2uiBasicCatalogV1
+import androidx.a2ui.model.catalog.A2uiFunction
 import androidx.compose.material3.a2ui.catalog.MaterialA2uiBasicCatalogV1Defaults
 import androidx.compose.material3.a2ui.catalog.materialA2uiBasicCatalogV1
 import com.droidknights.a2ui.catalog.components.ActionGuardContainerComponent
@@ -11,6 +12,7 @@ import com.droidknights.a2ui.catalog.components.CircularClimateDialComponent
 import com.droidknights.a2ui.catalog.components.HotspotDiagramCardComponent
 import com.droidknights.a2ui.catalog.components.MetricSparklineComponent
 import com.droidknights.a2ui.catalog.components.PowerBudgetBarComponent
+import com.droidknights.a2ui.catalog.functions.A2uiBanknoteDenominationFunction
 import com.droidknights.a2ui.catalog.hooks.DefaultA2uiMediaRenderers
 import com.droidknights.a2ui.catalog.themes.BrandGradientButtonComponent
 import com.droidknights.a2ui.catalog.themes.BrandSquircleCardComponent
@@ -63,7 +65,16 @@ object DroidKnightsCatalogs {
         )
 
     /**
-     * 1. Standard Material 3 Catalog + 6 Reusable Custom Domain Primitives.
+     * Custom domain `A2uiFunction`s registered alongside `A2uiBasicCatalogV1` functions (`numeric`,
+     * `required`, `regex`, `and`, `or`, `not`, `formatCurrency`, `openUrl`, etc.).
+     */
+    val domainFunctions: List<A2uiFunction> =
+        listOf(
+            A2uiBanknoteDenominationFunction.INSTANCE,
+        )
+
+    /**
+     * 1. Standard Material 3 Catalog + 6 Reusable Custom Domain Primitives + Custom Domain Functions.
      */
     fun createStandardCatalog(
         catalogId: String = BASIC_CATALOG_ID,
@@ -82,7 +93,7 @@ object DroidKnightsCatalogs {
         return A2uiCatalog(
             catalogId = catalogId,
             components = baseM3.components + domainComponents,
-            functions = baseM3.functions,
+            functions = baseM3.functions + domainFunctions,
             themeSchema = baseM3.themeSchema,
         )
     }
@@ -110,7 +121,7 @@ object DroidKnightsCatalogs {
         return A2uiCatalog(
             catalogId = catalogId,
             components = brandBase.components + domainComponents,
-            functions = brandBase.functions,
+            functions = brandBase.functions + domainFunctions,
             themeSchema = brandBase.themeSchema,
         )
     }
@@ -138,7 +149,7 @@ object DroidKnightsCatalogs {
         return A2uiCatalog(
             catalogId = catalogId,
             components = seniorBase.components + domainComponents,
-            functions = seniorBase.functions,
+            functions = seniorBase.functions + domainFunctions,
             themeSchema = seniorBase.themeSchema,
         )
     }

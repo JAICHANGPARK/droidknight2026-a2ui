@@ -7,6 +7,7 @@ import androidx.a2ui.compose.ui.toJsonSchemaString
 import androidx.a2ui.model.protocol.A2uiClientEventMessage
 import com.droidknights.a2ui.BuildConfig
 import com.droidknights.a2ui.catalog.DroidKnightsCatalogs
+import com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -21,7 +22,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -160,18 +163,15 @@ object A2uiGeminiApiClient {
                             }
                         } else if (!replyOnly && trimmed.startsWith("{") && trimmed.endsWith("}")) {
                             runCatching {
-                                val parsedElement = json.parseToJsonElement(trimmed).jsonObject
-                                if (
-                                    parsedElement.containsKey("createSurface") ||
-                                        parsedElement.containsKey("updateDataModel") ||
-                                        parsedElement.containsKey("updateComponents")
-                                ) {
-                                    val compactLine = parsedElement.toString()
-                                    if (compactLine !in emittedJsonl) {
-                                        parser.parse(compactLine)
-                                        emittedJsonl.add(compactLine)
-                                        withContext(Dispatchers.Main) { onJsonlLine(compactLine) }
-                                    }
+                                val compactLine =
+                                    repairAndCompleteA2uiJsonlLine(
+                                        rawLine = trimmed,
+                                        isFollowUpStage3 = false,
+                                    )
+                                if (compactLine != null && compactLine !in emittedJsonl) {
+                                    parser.parse(compactLine)
+                                    emittedJsonl.add(compactLine)
+                                    withContext(Dispatchers.Main) { onJsonlLine(compactLine) }
                                 }
                             }
                         } else if (lastReplyEmitted.isEmpty() && !trimmed.startsWith("{")) {
@@ -224,7 +224,7 @@ object A2uiGeminiApiClient {
                                 model = model,
                                 systemPrompt =
                                     if (replyOnly) buildLmStudioReplyOnlySystemPrompt()
-                                    else buildLmStudioCompactSystemPrompt(),
+                                    else buildLmStudioCompactSystemPrompt(userPrompt),
                                 userPrompt = userPrompt,
                                 maxTokens = if (replyOnly) 140 else 850,
                                 onBufferUpdated = { buf, isFinal ->
@@ -324,7 +324,7 @@ object A2uiGeminiApiClient {
                     val rawText =
                         executeLmStudioChatCompletionRequest(
                             model = model,
-                            systemPrompt = buildLmStudioCompactSystemPrompt(),
+                            systemPrompt = buildLmStudioCompactSystemPrompt(userPrompt),
                             userPrompt = userPrompt,
                         )
                     parseAndValidateA2uiResponse(rawText = rawText, model = "LM Studio ($model)")
@@ -377,6 +377,190 @@ object A2uiGeminiApiClient {
                     val rawText = executeGenerateContentRequest(apiKey = apiKey, model = model, requestBody = requestBodyJson)
                     parseAndValidateA2uiResponse(rawText = rawText, model = model)
                 }
+            }
+        }
+
+    /**
+     * Real-time SSE (`stream: true` / `alt=sse`) streaming for Stage 2 (`submit_exchange` → 수령 바우처 설정)
+     * and Stage 3 (`issue_exchange_voucher` → 모바일 QR 바우처 발급 완료).
+     * Both LM Studio (On-Device) and Cloud Gemini API generate the follow-up `REPLY:` and A2UI v0.9.1 JSONL lines live!
+     */
+    suspend fun streamFollowUpExchangeSurface(
+        context: Context,
+        catalog: A2uiCatalog,
+        event: A2uiClientEventMessage,
+        voucherCode: String = "QR-EX-2026-8492",
+        onReplyDelta: suspend (String) -> Unit,
+        onJsonlLine: suspend (String) -> Unit,
+    ): Result<GeminiA2uiResponse> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val model = getModelName(context)
+                val emittedJsonl = mutableListOf<String>()
+                val parser = A2uiMessageParser()
+                var lastReplyEmitted = ""
+                val isStage2 = event.type == "submit_exchange"
+                val isBankingInquiry = event.type == "submit_banking_inquiry"
+                val expectedLines = if (isStage2) 2 else 1
+
+                val systemPrompt =
+                    when {
+                        isStage2 -> buildStage2FollowUpSystemPrompt()
+                        isBankingInquiry -> buildBankingInquiryDoneSystemPrompt(event)
+                        else -> buildStage3FollowUpSystemPrompt(voucherCode)
+                    }
+                val eventSummaryPrompt =
+                    when {
+                        isStage2 ->
+                            "클라이언트 1단계 환전 신청 이벤트 수신: eventName=${event.type}, context=${event.context}. " +
+                                "전달된 외화 금액·원화 금액·수령 지점을 반영하여 2단계(수령 바우처 설정) REPLY와 A2UI JSONL 2줄(updateComponents, updateDataModel)을 출력하세요."
+                        isBankingInquiry ->
+                            "클라이언트 금융 거래 실행 이벤트 수신: eventName=${event.type}, context=${event.context}. " +
+                                "전달된 거래 정보를 반영하여 거래 완료 REPLY와 A2UI JSONL 1줄(updateComponents)을 출력하세요."
+                        else ->
+                            "클라이언트 2단계 수령 방식 확정 이벤트 수신: eventName=${event.type}, voucherCode=$voucherCode, context=${event.context}. " +
+                                "전달된 수령 방식·연락처·금액을 반영하여 3단계(모바일 QR 바우처 발급 완료) REPLY와 A2UI JSONL 1줄(updateComponents)을 출력하세요."
+                    }
+
+                suspend fun processIncrementalBuffer(buffer: String, isFinal: Boolean): Boolean {
+                    val sanitized = buffer.replace(Regex("""<think>[\s\S]*?</think>"""), "")
+                    if (sanitized.contains("<think>") && !sanitized.contains("</think>")) {
+                        return false
+                    }
+                    val lines = sanitized.split("\n")
+                    val completeLines = if (isFinal) lines else lines.dropLast(1)
+                    val activeLine = if (isFinal) null else lines.lastOrNull()
+
+                    for (rawLine in completeLines) {
+                        val trimmed = rawLine.trim()
+                        if (trimmed.isEmpty() || trimmed.startsWith("```")) continue
+                        if (trimmed.startsWith("REPLY:", ignoreCase = true)) {
+                            val replyText = trimmed.removePrefix("REPLY:").removePrefix("reply:").trim()
+                            if (replyText.isNotEmpty() && replyText != lastReplyEmitted) {
+                                lastReplyEmitted = replyText
+                                withContext(Dispatchers.Main) { onReplyDelta(replyText) }
+                            }
+                        } else if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                            runCatching {
+                                val compactLine =
+                                    repairAndCompleteA2uiJsonlLine(
+                                        rawLine = trimmed,
+                                        isFollowUpStage3 = !isStage2,
+                                    )
+                                // Never emit createSurface on follow-up Stage 2 / Stage 3 turns so existing DataModel is preserved
+                                if (
+                                    compactLine != null &&
+                                        !compactLine.contains("\"createSurface\"") &&
+                                        compactLine !in emittedJsonl
+                                ) {
+                                    parser.parse(compactLine)
+                                    emittedJsonl.add(compactLine)
+                                    withContext(Dispatchers.Main) { onJsonlLine(compactLine) }
+                                }
+                            }
+                        } else if (lastReplyEmitted.isEmpty() && !trimmed.startsWith("{")) {
+                            lastReplyEmitted = trimmed
+                            withContext(Dispatchers.Main) { onReplyDelta(trimmed) }
+                        }
+                    }
+
+                    if (activeLine != null) {
+                        val trimmedActive = activeLine.trim()
+                        if (trimmedActive.startsWith("REPLY:", ignoreCase = true)) {
+                            val partialReply =
+                                trimmedActive.removePrefix("REPLY:").removePrefix("reply:").trim()
+                            if (partialReply.isNotEmpty() && partialReply != lastReplyEmitted) {
+                                lastReplyEmitted = partialReply
+                                withContext(Dispatchers.Main) { onReplyDelta(partialReply) }
+                            }
+                        }
+                    }
+                    return emittedJsonl.size >= expectedLines
+                }
+
+                val rawText =
+                    if (isLmStudioModel(model)) {
+                        lmStudioMutex.withLock {
+                            executeLmStudioStreamingRequest(
+                                model = model,
+                                systemPrompt = systemPrompt,
+                                userPrompt = eventSummaryPrompt,
+                                maxTokens = 850,
+                                onBufferUpdated = { buf, isFinal ->
+                                    processIncrementalBuffer(buf, isFinal)
+                                },
+                            )
+                        }
+                    } else {
+                        val apiKey = getApiKey(context)
+                        require(apiKey.isNotBlank()) { "Gemini API 키가 설정되지 않았습니다." }
+                        val requestBodyJson =
+                            buildJsonObject {
+                                put(
+                                    "systemInstruction",
+                                    buildJsonObject {
+                                        put(
+                                            "parts",
+                                            buildJsonArray {
+                                                add(buildJsonObject { put("text", systemPrompt) })
+                                            },
+                                        )
+                                    },
+                                )
+                                put(
+                                    "contents",
+                                    buildJsonArray {
+                                        add(
+                                            buildJsonObject {
+                                                put("role", "user")
+                                                put(
+                                                    "parts",
+                                                    buildJsonArray {
+                                                        add(buildJsonObject { put("text", eventSummaryPrompt) })
+                                                    },
+                                                )
+                                            }
+                                        )
+                                    },
+                                )
+                                put(
+                                    "generationConfig",
+                                    buildJsonObject {
+                                        put("temperature", 0.2)
+                                    },
+                                )
+                            }.toString()
+
+                        executeGeminiStreamingRequest(
+                            apiKey = apiKey,
+                            model = model,
+                            requestBody = requestBodyJson,
+                            onBufferUpdated = { buf, isFinal ->
+                                processIncrementalBuffer(buf, isFinal)
+                            },
+                        )
+                    }
+
+                val modelLabel = if (isLmStudioModel(model)) "LM Studio ($model)" else model
+                val finalParsed =
+                    parseAndValidateA2uiResponse(
+                        rawText = rawText,
+                        model = modelLabel,
+                        isFollowUpStage3 = !isStage2,
+                    )
+
+                if (finalParsed.agentReplyText != lastReplyEmitted) {
+                    withContext(Dispatchers.Main) { onReplyDelta(finalParsed.agentReplyText) }
+                }
+                for (line in finalParsed.jsonlLines) {
+                    if (!line.contains("\"createSurface\"") && line !in emittedJsonl) {
+                        emittedJsonl.add(line)
+                        withContext(Dispatchers.Main) { onJsonlLine(line) }
+                    }
+                }
+                finalParsed
+            }.onFailure { e ->
+                if (e is CancellationException) throw e
             }
         }
 
@@ -589,78 +773,104 @@ object A2uiGeminiApiClient {
         requestBody: String,
         onBufferUpdated: suspend (String, Boolean) -> Boolean,
     ): String {
-        val endpoint =
-            "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse&key=$apiKey"
-        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 10_000
-            readTimeout = 20_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-            setRequestProperty("Accept", "text/event-stream")
-        }
-        val cancelHandle =
-            coroutineContext[Job]?.invokeOnCompletion { cause ->
-                if (cause != null) {
-                    runCatching { connection.disconnect() }
-                }
-            }
+        val candidateEndpoints =
+            listOf(
+                "https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse&key=$apiKey",
+                // USB Bridge fallback (`adb reverse tcp:1235 tcp:1235`) when the Android device has no Wi-Fi/LTE
+                "http://127.0.0.1:1235/v1beta/models/$model:streamGenerateContent?alt=sse&key=$apiKey",
+                "http://10.0.2.2:1235/v1beta/models/$model:streamGenerateContent?alt=sse&key=$apiKey",
+            )
 
-        return try {
-            OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
-                writer.write(requestBody)
-                writer.flush()
-            }
-
-            val status = connection.responseCode
-            if (status !in 200..299) {
-                val errText =
-                    connection.errorStream?.let {
-                        BufferedReader(InputStreamReader(it, Charsets.UTF_8)).use { r -> r.readText() }
-                    }.orEmpty()
-                throw IllegalStateException("Gemini SSE HTTP $status: ${errText.take(200)}")
-            }
-
-            val accumulated = StringBuilder()
-            BufferedReader(InputStreamReader(connection.inputStream, Charsets.UTF_8)).use { reader ->
-                var sseLine: String? = reader.readLine()
-                while (sseLine != null) {
-                    coroutineContext.ensureActive()
-                    val trimmed = sseLine.trim()
-                    if (trimmed.startsWith("data:")) {
-                        val dataPayload = trimmed.removePrefix("data:").trim()
-                        if (dataPayload.startsWith("{")) {
-                            val deltaText =
-                                runCatching {
-                                    val rootObj = json.parseToJsonElement(dataPayload).jsonObject
-                                    val firstCandidate =
-                                        rootObj["candidates"]?.jsonArray?.firstOrNull()?.jsonObject
-                                    val parts =
-                                        firstCandidate?.get("content")?.jsonObject?.get("parts")?.jsonArray
-                                    parts?.joinToString("") { part ->
-                                        part.jsonObject["text"]?.jsonPrimitive?.content.orEmpty()
-                                    }.orEmpty()
-                                }.getOrDefault("")
-                            if (deltaText.isNotEmpty()) {
-                                accumulated.append(deltaText)
-                                onBufferUpdated(accumulated.toString(), false)
-                            }
+        var lastError: Throwable? = null
+        for (endpoint in candidateEndpoints) {
+            var connection: HttpURLConnection? = null
+            var receivedAnyData = false
+            try {
+                val activeConn =
+                    (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        connectTimeout = if (endpoint.startsWith("https://")) 5_000 else 3_500
+                        readTimeout = 20_000
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                        setRequestProperty("Accept", "text/event-stream")
+                    }
+                connection = activeConn
+                val cancelHandle =
+                    coroutineContext[Job]?.invokeOnCompletion { cause ->
+                        if (cause != null) {
+                            runCatching { activeConn.disconnect() }
                         }
                     }
-                    sseLine = reader.readLine()
-                }
-            }
 
-            val finalContent = accumulated.toString().trim()
-            if (finalContent.isNotEmpty()) {
-                onBufferUpdated(finalContent, true)
-                return finalContent
+                try {
+                    OutputStreamWriter(activeConn.outputStream, Charsets.UTF_8).use { writer ->
+                        writer.write(requestBody)
+                        writer.flush()
+                    }
+
+                    val status = activeConn.responseCode
+                    if (status !in 200..299) {
+                        val errText =
+                            activeConn.errorStream?.let {
+                                BufferedReader(InputStreamReader(it, Charsets.UTF_8)).use { r -> r.readText() }
+                            }.orEmpty()
+                        throw IllegalStateException("Gemini SSE HTTP $status: ${errText.take(200)}")
+                    }
+
+                    val accumulated = StringBuilder()
+                    BufferedReader(InputStreamReader(activeConn.inputStream, Charsets.UTF_8)).use { reader ->
+                        var sseLine: String? = reader.readLine()
+                        while (sseLine != null) {
+                            coroutineContext.ensureActive()
+                            receivedAnyData = true
+                            val trimmed = sseLine.trim()
+                            if (trimmed.startsWith("data:")) {
+                                val dataPayload = trimmed.removePrefix("data:").trim()
+                                if (dataPayload.startsWith("{")) {
+                                    val deltaText =
+                                        runCatching {
+                                            val rootObj = json.parseToJsonElement(dataPayload).jsonObject
+                                            val firstCandidate =
+                                                rootObj["candidates"]?.jsonArray?.firstOrNull()?.jsonObject
+                                            val parts =
+                                                firstCandidate?.get("content")?.jsonObject?.get("parts")?.jsonArray
+                                            parts?.joinToString("") { part ->
+                                                part.jsonObject["text"]?.jsonPrimitive?.content.orEmpty()
+                                            }.orEmpty()
+                                        }.getOrDefault("")
+                                    if (deltaText.isNotEmpty()) {
+                                        accumulated.append(deltaText)
+                                        onBufferUpdated(accumulated.toString(), false)
+                                    }
+                                }
+                            }
+                            sseLine = reader.readLine()
+                        }
+                    }
+
+                    val finalContent = accumulated.toString().trim()
+                    if (finalContent.isNotEmpty()) {
+                        onBufferUpdated(finalContent, true)
+                        return finalContent
+                    }
+                    throw IllegalStateException("Gemini SSE 스트림 응답이 비어 있습니다.")
+                } finally {
+                    cancelHandle?.dispose()
+                }
+            } catch (e: Throwable) {
+                if (e is CancellationException) throw e
+                lastError = e
+                // If we already received an HTTP response or SSE data from the server (e.g. HTTP 400/403 API key error),
+                // do not retry on fallback endpoints. Only try USB Bridge fallback when network connection failed!
+                if (receivedAnyData || (e is IllegalStateException && e.message?.startsWith("Gemini SSE HTTP") == true)) {
+                    break
+                }
+            } finally {
+                runCatching { connection?.disconnect() }
             }
-            throw IllegalStateException("Gemini SSE 스트림 응답이 비어 있습니다.")
-        } finally {
-            cancelHandle?.dispose()
-            runCatching { connection.disconnect() }
         }
+        throw (lastError ?: IllegalStateException("Gemini API 네트워크 연결 실패"))
     }
 
     private fun executeLmStudioChatCompletionRequest(
@@ -783,7 +993,8 @@ object A2uiGeminiApiClient {
                                 val ids =
                                     dataArr
                                         ?.mapNotNull { it.jsonObject["id"]?.jsonPrimitive?.content }
-                                        ?.filterNot { it.contains("embed", ignoreCase = true) }
+                                        ?.filterNot { it.contains("embed", ignoreCase = true) || it.contains(":") }
+                                        ?.distinct()
                                         .orEmpty()
                                 if (ids.isNotEmpty()) return@runCatching ids
                             }
@@ -806,8 +1017,18 @@ object A2uiGeminiApiClient {
         사용자의 금융 요청(간편 송금·이체, 카드 명세서 즉시결제, 해외출국 패키지, 재환전, 목표환율 자동환전 등)이나 질문에 대해 JSON 코드 없이 반드시 `REPLY: <친절하고 간결한 한국어 안내 1~2문장>` 한 줄만 즉시 출력하세요.
         """.trimIndent()
 
-    private fun buildLmStudioCompactSystemPrompt(): String =
-        """
+    private fun buildLmStudioCompactSystemPrompt(userPrompt: String = ""): String {
+        val fallbackIdx = CurrencyExchangePayloads.resolvePresetIndexFromUserText(userPrompt, 0)
+        val (refReply, refLines) =
+            CurrencyExchangePayloads.buildDynamicBankingJsonlForQuery(
+                userQuery = userPrompt.ifBlank { "인천공항 1터미널 수령으로 5만 엔 환전해 줘" },
+                fallbackCaseIndex = fallbackIdx,
+            )
+        val createLine = refLines.firstOrNull { it.contains("\"createSurface\"") } ?: refLines[0]
+        val compLine = refLines.firstOrNull { it.contains("\"updateComponents\"") } ?: refLines.getOrElse(2) { refLines.last() }
+        val dataLine = refLines.firstOrNull { it.contains("\"updateDataModel\"") } ?: refLines.getOrElse(1) { refLines.last() }
+
+        return """
         당신은 DK 뱅크 모바일 금융 슈퍼앱의 AI 금융비서입니다.
         고객 이름: 박제창님 (DK 주거래 통장 보유, 환전·송금 수수료 전액 면제).
         기준환율(VVIP 우대): 일본 엔(JPY 100) 847.88원(90% 우대), 미국 달러(USD 1) 1,335.80원(90% 우대), 유럽 유로(EUR 1) 1,490.75원(80% 우대), 스위스 프랑(CHF 1) 1,619.05원(80% 우대).
@@ -815,72 +1036,457 @@ object A2uiGeminiApiClient {
         사용자의 입력 의도에 따라 아래 두 가지 중 하나로 응답하세요:
         - [A. 단순 정보 질문인 경우] (예: 인사, 오늘 환율 질문, 수수료 질문, 공항 수령 장소 질문):
           JSONL 없이 `REPLY: <친절한 한국어 답변 1~3문장>`만 출력하세요.
-        - [B. 환전·송금·결제 등 실행 요청인 경우]:
+        - [B. 환전·송금·결제·내역조회 등 실행 요청인 경우]:
           1) 첫 줄에 `REPLY: <한국어 안내 문장>`을 출력하고,
-          2) 이어서 마크다운 코드블록(```) 없이 아래 A2UI v0.9.1 JSONL 규격의 단일 라인 JSON 객체 3줄(`createSurface`, `updateDataModel`, `updateComponents`)을 직접 생성하여 출력하세요. 사용자가 요청한 외화 금액(예: 6000엔 → jpyAmount: 6000, krwAmount: 50873 / 50000엔 → jpyAmount: 50000, krwAmount: 423940)에 맞춰 숫자와 제목을 변경하세요.
+          2) 이어서 마크다운 코드블록(```) 없이 아래 A2UI v0.9.1 JSONL 규격의 단일 라인 JSON 객체 3줄(`createSurface` → `updateComponents` → `updateDataModel` 순서)을 직접 생성하여 출력하세요. 사용자가 요청한 금액·수취인·통화에 맞춰 값과 제목을 반영하세요.
 
         [A2UI v0.9.1 JSONL 출력 예시 (정확히 4줄 형식: createSurface → updateComponents → updateDataModel 순서)]
-        REPLY: 박제창님, 요청하신 인천공항 수령 엔화 환전 신청서를 준비했습니다. 금액을 확인하고 신청 버튼을 눌러주세요.
-        {"version":"v0.9.1","createSurface":{"surfaceId":"exchange_surface","catalogId":"${DroidKnightsCatalogs.BASIC_CATALOG_ID}","sendDataModel":true}}
-        {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[{"id":"root","component":"Column","children":["exchange_card"]},{"id":"exchange_card","component":"Card","child":"card_col"},{"id":"card_col","component":"Column","children":["title","exchange_converter","branch_picker","coupon_chk","btn_submit"]},{"id":"title","component":"Text","text":"💴 50,000 JPY 환전 (90% 우대)"},{"id":"exchange_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"환전 금액","exchangeRate":847.88,"unitScale":100,"foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"}},{"id":"branch_picker","component":"ChoicePicker","label":"수령처","variant":"mutuallyExclusive","options":[{"label":"인천공항 1터미널","value":"ICN_T1"},{"label":"인천공항 2터미널","value":"ICN_T2"}],"value":{"path":"/exchange/branch"}},{"id":"coupon_chk","component":"CheckBox","label":"주거래 통장 출금 · 90% 우대","value":{"path":"/exchange/coupon90"}},{"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"jpy_airport_oneshot","currency":"JPY","foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"},"branch":{"path":"/exchange/branch"},"coupon90":{"path":"/exchange/coupon90"}}}}},{"id":"btn_txt","component":"Text","text":"환전 신청하기"}]}}
-        {"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"currency":"JPY","jpyAmount":50000,"krwAmount":423940,"branch":["ICN_T1"],"coupon90":true}}}
+        REPLY: $refReply
+        $createLine
+        $compLine
+        $dataLine
         """.trimIndent()
+    }
 
     private fun executeGenerateContentRequest(
         apiKey: String,
         model: String,
         requestBody: String,
     ): String {
-        val endpoint =
-            "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
-        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 10_000
-            readTimeout = 18_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-        }
+        val candidateEndpoints =
+            listOf(
+                "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey",
+                // USB Bridge fallback (`adb reverse tcp:1235 tcp:1235`) when the Android device has no Wi-Fi/LTE
+                "http://127.0.0.1:1235/v1beta/models/$model:generateContent?key=$apiKey",
+                "http://10.0.2.2:1235/v1beta/models/$model:generateContent?key=$apiKey",
+            )
 
-        return try {
-            OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
-                writer.write(requestBody)
-                writer.flush()
+        var lastError: Throwable? = null
+        for (endpoint in candidateEndpoints) {
+            val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = if (endpoint.startsWith("https://")) 5_000 else 3_500
+                readTimeout = 18_000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
             }
 
-            val status = connection.responseCode
-            val stream =
-                if (status in 200..299) connection.inputStream
-                else connection.errorStream
-            val bodyText =
-                stream?.let {
-                    BufferedReader(InputStreamReader(it, Charsets.UTF_8)).use { reader ->
-                        reader.readText()
+            try {
+                OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
+                    writer.write(requestBody)
+                    writer.flush()
+                }
+
+                val status = connection.responseCode
+                val stream =
+                    if (status in 200..299) connection.inputStream
+                    else connection.errorStream
+                val bodyText =
+                    stream?.let {
+                        BufferedReader(InputStreamReader(it, Charsets.UTF_8)).use { reader ->
+                            reader.readText()
+                        }
+                    }.orEmpty()
+
+                if (status !in 200..299) {
+                    throw IllegalStateException("Gemini API HTTP $status: ${bodyText.take(200)}")
+                }
+
+                val rootObj = json.parseToJsonElement(bodyText).jsonObject
+                val candidates = rootObj["candidates"]?.jsonArray
+                val firstCandidate =
+                    candidates?.firstOrNull()?.jsonObject
+                        ?: throw IllegalStateException("Gemini API 응답에 candidates가 없습니다.")
+                val parts =
+                    firstCandidate["content"]?.jsonObject?.get("parts")?.jsonArray
+                        ?: throw IllegalStateException("Gemini API 응답에 content.parts가 없습니다.")
+                return parts.joinToString("\n") { part ->
+                    part.jsonObject["text"]?.jsonPrimitive?.content.orEmpty()
+                }
+            } catch (e: Throwable) {
+                lastError = e
+                if (e is IllegalStateException && e.message?.startsWith("Gemini API HTTP") == true) {
+                    break
+                }
+            } finally {
+                runCatching { connection.disconnect() }
+            }
+        }
+        throw (lastError ?: IllegalStateException("Gemini API 네트워크 연결 실패"))
+    }
+
+    internal fun repairAndCompleteA2uiJsonlLine(
+        rawLine: String,
+        isFollowUpStage3: Boolean = false,
+    ): String? {
+        val preRepaired =
+            rawLine
+                .trim()
+                .replace(Regex(""""path"\s*:\s*"([^"]+)"\s*\]"""), """"path":"$1"}""")
+                .replace("}}]}}", "}]}}")
+                .replace("}]}]}", "}]}}")
+
+        val parsedElement = runCatching { json.parseToJsonElement(preRepaired).jsonObject }.getOrNull() ?: return null
+        if (
+            !parsedElement.containsKey("createSurface") &&
+                !parsedElement.containsKey("updateDataModel") &&
+                !parsedElement.containsKey("updateComponents")
+        ) {
+            return null
+        }
+
+        if (parsedElement.containsKey("updateDataModel")) {
+            val dmObj = parsedElement["updateDataModel"]?.jsonObject ?: return parsedElement.toString()
+            val pathStr = dmObj["path"]?.jsonPrimitive?.content.orEmpty()
+            val valueObj = dmObj["value"] as? JsonObject
+            if (pathStr == "/exchange" && valueObj != null) {
+                val rawJpy = (valueObj["jpyAmount"] as? JsonPrimitive)?.content?.toLongOrNull()
+                val fixedJpy =
+                    if (rawJpy != null) {
+                        CurrencyExchangePayloads.normalizeToBanknoteAmount("JPY", rawJpy).first
+                    } else null
+                val enrichedValue =
+                    buildJsonObject {
+                        for ((k, v) in valueObj) {
+                            when {
+                                k == "jpyAmount" && fixedJpy != null ->
+                                    put("jpyAmount", JsonPrimitive(fixedJpy))
+                                k == "krwAmount" && fixedJpy != null && fixedJpy != rawJpy ->
+                                    put("krwAmount", JsonPrimitive(kotlin.math.round((fixedJpy / 100.0) * 847.88).toLong()))
+                                else -> put(k, v)
+                            }
+                        }
+                        if (!valueObj.containsKey("agreeForexTerms")) {
+                            put("agreeForexTerms", JsonPrimitive(false))
+                        }
+                        if (!valueObj.containsKey("agreePickupTerms")) {
+                            put("agreePickupTerms", JsonPrimitive(false))
+                        }
                     }
-                }.orEmpty()
-
-            if (status !in 200..299) {
-                throw IllegalStateException("Gemini API HTTP $status: ${bodyText.take(200)}")
+                return buildJsonObject {
+                    put("version", parsedElement["version"] ?: JsonPrimitive("v0.9.1"))
+                    put(
+                        "updateDataModel",
+                        buildJsonObject {
+                            for ((k, v) in dmObj) {
+                                if (k == "value") put("value", enrichedValue) else put(k, v)
+                            }
+                        },
+                    )
+                }.toString()
             }
-
-            val rootObj = json.parseToJsonElement(bodyText).jsonObject
-            val candidates = rootObj["candidates"]?.jsonArray
-            val firstCandidate =
-                candidates?.firstOrNull()?.jsonObject
-                    ?: throw IllegalStateException("Gemini API 응답에 candidates가 없습니다.")
-            val parts =
-                firstCandidate["content"]?.jsonObject?.get("parts")?.jsonArray
-                    ?: throw IllegalStateException("Gemini API 응답에 content.parts가 없습니다.")
-            parts.joinToString("\n") { part ->
-                part.jsonObject["text"]?.jsonPrimitive?.content.orEmpty()
-            }
-        } finally {
-            connection.disconnect()
+            return parsedElement.toString()
         }
+
+        if (!parsedElement.containsKey("updateComponents")) {
+            return parsedElement.toString()
+        }
+
+        val updateComponentsObj = parsedElement["updateComponents"]?.jsonObject ?: return parsedElement.toString()
+        val surfaceId = updateComponentsObj["surfaceId"]?.jsonPrimitive?.content ?: "exchange_surface"
+        val origComponents = updateComponentsObj["components"]?.jsonArray ?: return parsedElement.toString()
+
+        val definedIds = mutableSetOf<String>()
+        val normalizedList = mutableListOf<JsonObject>()
+        val pendingChildTextNodes = mutableListOf<JsonObject>()
+        var hasSubmitExchangeButton = false
+
+        for (elem in origComponents) {
+            val comp = elem as? JsonObject ?: continue
+            val id = comp["id"]?.jsonPrimitive?.content ?: continue
+            val type = comp["component"]?.jsonPrimitive?.content ?: continue
+            definedIds.add(id)
+
+            when (type) {
+                "Button" -> {
+                    val directText =
+                        (comp["text"] as? JsonPrimitive)?.content
+                            ?: (comp["label"] as? JsonPrimitive)?.content
+                    val childId =
+                        (comp["child"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+                            ?: "${id}_txt"
+                    val defaultText =
+                        directText
+                            ?: when {
+                                id.contains("issue") -> "모바일 수령 QR 바우처 발급 확정"
+                                id.contains("back") -> "금액 다시 입력"
+                                id.contains("submit") -> "환전 신청하기"
+                                else -> "➕ 추가 환전 신청하기"
+                            }
+                    val defaultEventName =
+                        when {
+                            id.contains("issue") -> "issue_exchange_voucher"
+                            id.contains("submit") -> "submit_exchange"
+                            else -> "reset_exchange_surface"
+                        }
+                    val rawActionObj = (comp["action"] as? JsonObject)?.takeIf { it.containsKey("event") }
+                    val rawEventObj = rawActionObj?.get("event") as? JsonObject
+                    val resolvedEventName =
+                        rawEventObj?.get("name")?.jsonPrimitive?.content ?: defaultEventName
+                    if (resolvedEventName == "submit_exchange") {
+                        hasSubmitExchangeButton = true
+                    }
+                    val validAction =
+                        if (rawActionObj != null && rawEventObj != null) {
+                            if (resolvedEventName == "submit_exchange") {
+                                val rawCtx = rawEventObj["context"] as? JsonObject
+                                val enrichedCtx =
+                                    buildJsonObject {
+                                        if (rawCtx != null) {
+                                            for ((k, v) in rawCtx) put(k, v)
+                                        }
+                                        if (rawCtx == null || !rawCtx.containsKey("agreeForexTerms")) {
+                                            put(
+                                                "agreeForexTerms",
+                                                buildJsonObject { put("path", "/exchange/agreeForexTerms") },
+                                            )
+                                        }
+                                        if (rawCtx == null || !rawCtx.containsKey("agreePickupTerms")) {
+                                            put(
+                                                "agreePickupTerms",
+                                                buildJsonObject { put("path", "/exchange/agreePickupTerms") },
+                                            )
+                                        }
+                                    }
+                                buildJsonObject {
+                                    put(
+                                        "event",
+                                        buildJsonObject {
+                                            put("name", resolvedEventName)
+                                            put("context", enrichedCtx)
+                                        },
+                                    )
+                                }
+                            } else {
+                                rawActionObj
+                            }
+                        } else {
+                            buildJsonObject {
+                                put(
+                                    "event",
+                                    buildJsonObject {
+                                        put("name", defaultEventName)
+                                        put(
+                                            "context",
+                                            buildJsonObject {
+                                                put("reason", "new_exchange")
+                                            },
+                                        )
+                                    },
+                                )
+                            }
+                        }
+                    val variantStr = (comp["variant"] as? JsonPrimitive)?.content ?: "primary"
+                    val rebuiltButton =
+                        buildJsonObject {
+                            put("id", id)
+                            put("component", "Button")
+                            put("variant", variantStr)
+                            put("child", childId)
+                            put("action", validAction)
+                        }
+                    normalizedList.add(rebuiltButton)
+                    pendingChildTextNodes.add(
+                        buildJsonObject {
+                            put("id", childId)
+                            put("component", "Text")
+                            put("text", defaultText)
+                        }
+                    )
+                }
+
+                "Text" -> {
+                    val textEl = comp["text"]
+                    val resolvedTextPrimitive =
+                        when {
+                            textEl is JsonPrimitive -> textEl
+                            isFollowUpStage3 && textEl is JsonObject -> {
+                                val pathHint = textEl["path"]?.jsonPrimitive?.content.orEmpty()
+                                JsonPrimitive(pathHint.substringAfterLast('/').ifBlank { "완료" })
+                            }
+                            textEl != null -> null
+                            else -> JsonPrimitive("")
+                        }
+                    if (resolvedTextPrimitive != null) {
+                        val rebuiltText =
+                            buildJsonObject {
+                                for ((k, v) in comp) {
+                                    if (k == "text") put("text", resolvedTextPrimitive)
+                                    else put(k, v)
+                                }
+                                if (!comp.containsKey("text")) {
+                                    put("text", resolvedTextPrimitive)
+                                }
+                            }
+                        normalizedList.add(rebuiltText)
+                    } else {
+                        normalizedList.add(comp)
+                    }
+                }
+
+                else -> {
+                    normalizedList.add(comp)
+                }
+            }
+        }
+
+        // Ensure every Button's child Text node exists in definedIds
+        for (txtNode in pendingChildTextNodes) {
+            val txtId = txtNode["id"]?.jsonPrimitive?.content ?: continue
+            if (txtId !in definedIds) {
+                definedIds.add(txtId)
+                normalizedList.add(txtNode)
+            }
+        }
+
+        // If this is a Stage 1 exchange form (contains submit_exchange button), guarantee mandatory terms CheckBoxes exist
+        if (hasSubmitExchangeButton) {
+            if ("terms_forex_chk" !in definedIds) {
+                definedIds.add("terms_forex_chk")
+                normalizedList.add(
+                    buildJsonObject {
+                        put("id", "terms_forex_chk")
+                        put("component", "CheckBox")
+                        put("label", "[필수] 외국환거래법 및 인터넷 환전 유의사항 동의")
+                        put("value", buildJsonObject { put("path", "/exchange/agreeForexTerms") })
+                    }
+                )
+            }
+            if ("terms_pickup_chk" !in definedIds) {
+                definedIds.add("terms_pickup_chk")
+                normalizedList.add(
+                    buildJsonObject {
+                        put("id", "terms_pickup_chk")
+                        put("component", "CheckBox")
+                        put("label", "[필수] 공항 여권 지참 및 미수령 환불 규정 동의")
+                        put("value", buildJsonObject { put("path", "/exchange/agreePickupTerms") })
+                    }
+                )
+            }
+        }
+
+        // Check Column / Row children & Card child so no child ID is ever missing from definedIds (prevents infinite Shimmer)
+        val extraSynthesizedNodes = mutableListOf<JsonObject>()
+        val finalComponents =
+            normalizedList.map { comp ->
+                val type = comp["component"]?.jsonPrimitive?.content
+                if (type == "Column" || type == "Row") {
+                    val childrenArr = comp["children"] as? JsonArray
+                    if (childrenArr != null) {
+                        val validChildren = mutableListOf<String>()
+                        for (cEl in childrenArr) {
+                            val cid = (cEl as? JsonPrimitive)?.content ?: continue
+                            if (
+                                hasSubmitExchangeButton &&
+                                    cid.contains("submit") &&
+                                    type == "Column"
+                            ) {
+                                if ("terms_forex_chk" !in validChildren && childrenArr.none { (it as? JsonPrimitive)?.content == "terms_forex_chk" }) {
+                                    validChildren.add("terms_forex_chk")
+                                }
+                                if ("terms_pickup_chk" !in validChildren && childrenArr.none { (it as? JsonPrimitive)?.content == "terms_pickup_chk" }) {
+                                    validChildren.add("terms_pickup_chk")
+                                }
+                            }
+                            if (cid in definedIds) {
+                                validChildren.add(cid)
+                            } else if (cid.contains("btn")) {
+                                val txtId = "${cid}_txt"
+                                val label =
+                                    when {
+                                        cid.contains("issue") -> "모바일 수령 QR 바우처 발급 확정"
+                                        cid.contains("back") -> "금액 다시 입력"
+                                        cid.contains("submit") -> "환전 신청하기"
+                                        else -> "➕ 추가 환전 신청하기"
+                                    }
+                                val eventName =
+                                    when {
+                                        cid.contains("issue") -> "issue_exchange_voucher"
+                                        cid.contains("submit") -> "submit_exchange"
+                                        else -> "reset_exchange_surface"
+                                    }
+                                definedIds.add(cid)
+                                extraSynthesizedNodes.add(
+                                    buildJsonObject {
+                                        put("id", cid)
+                                        put("component", "Button")
+                                        put("variant", if (cid.contains("back")) "borderless" else "primary")
+                                        put("child", txtId)
+                                        put(
+                                            "action",
+                                            buildJsonObject {
+                                                put(
+                                                    "event",
+                                                    buildJsonObject {
+                                                        put("name", eventName)
+                                                        put(
+                                                            "context",
+                                                            buildJsonObject {
+                                                                put("reason", "new_exchange")
+                                                            },
+                                                        )
+                                                    },
+                                                )
+                                            },
+                                        )
+                                    }
+                                )
+                                if (txtId !in definedIds) {
+                                    definedIds.add(txtId)
+                                    extraSynthesizedNodes.add(
+                                        buildJsonObject {
+                                            put("id", txtId)
+                                            put("component", "Text")
+                                            put("text", label)
+                                        }
+                                    )
+                                }
+                                validChildren.add(cid)
+                            }
+                        }
+                        buildJsonObject {
+                            for ((k, v) in comp) {
+                                if (k == "children") {
+                                    put(
+                                        "children",
+                                        buildJsonArray {
+                                            validChildren.forEach { add(JsonPrimitive(it)) }
+                                        },
+                                    )
+                                } else {
+                                    put(k, v)
+                                }
+                            }
+                        }
+                    } else {
+                        comp
+                    }
+                } else {
+                    comp
+                }
+            } + extraSynthesizedNodes
+
+        return buildJsonObject {
+            put("version", parsedElement["version"] ?: JsonPrimitive("v0.9.1"))
+            put(
+                "updateComponents",
+                buildJsonObject {
+                    put("surfaceId", surfaceId)
+                    put(
+                        "components",
+                        buildJsonArray {
+                            finalComponents.forEach { add(it) }
+                        },
+                    )
+                },
+            )
+        }.toString()
     }
 
     internal fun parseAndValidateA2uiResponse(
         rawText: String,
         model: String,
+        isFollowUpStage3: Boolean = false,
     ): GeminiA2uiResponse {
         val cleanedLines =
             rawText
@@ -896,16 +1502,16 @@ object A2uiGeminiApiClient {
             if (line.startsWith("REPLY:", ignoreCase = true)) {
                 agentReply = line.removePrefix("REPLY:").removePrefix("reply:").trim()
             } else if (line.startsWith("{") && line.endsWith("}")) {
-                // Validate that it is a valid A2UI v0.9.1 message
-                val parsedElement = json.parseToJsonElement(line).jsonObject
-                if (
-                    parsedElement.containsKey("createSurface") ||
-                        parsedElement.containsKey("updateDataModel") ||
-                        parsedElement.containsKey("updateComponents")
-                ) {
-                    val compactLine = parsedElement.toString()
-                    parser.parse(compactLine)
-                    extractedJsonl.add(compactLine)
+                runCatching {
+                    val compactLine =
+                        repairAndCompleteA2uiJsonlLine(
+                            rawLine = line,
+                            isFollowUpStage3 = isFollowUpStage3,
+                        )
+                    if (compactLine != null) {
+                        parser.parse(compactLine)
+                        extractedJsonl.add(compactLine)
+                    }
                 }
             } else if (agentReply.isEmpty() && !line.startsWith("{")) {
                 agentReply = line
@@ -916,13 +1522,12 @@ object A2uiGeminiApiClient {
         if (extractedJsonl.isEmpty()) {
             extractBalancedJsonObjects(rawText).forEach { candidateJson ->
                 runCatching {
-                    val parsedElement: JsonObject = json.parseToJsonElement(candidateJson).jsonObject
-                    if (
-                        parsedElement.containsKey("createSurface") ||
-                            parsedElement.containsKey("updateDataModel") ||
-                            parsedElement.containsKey("updateComponents")
-                    ) {
-                        val compactLine = parsedElement.toString()
+                    val compactLine =
+                        repairAndCompleteA2uiJsonlLine(
+                            rawLine = candidateJson,
+                            isFollowUpStage3 = isFollowUpStage3,
+                        )
+                    if (compactLine != null) {
                         parser.parse(compactLine)
                         extractedJsonl.add(compactLine)
                     }
@@ -1013,15 +1618,54 @@ object A2uiGeminiApiClient {
           - `MetricSparkline`, `ChoicePicker`, `TextField`, `CheckBox`, `Slider`, `BidirectionalExchangeInput` 중 적절한 위젯을 조합해 인터랙티브 금융 제어판 카드를 구성하세요.
           - 제출 `Button`의 `action`은 `"name": "submit_banking_inquiry"` 이벤트를 발생시키고, `context`에 `"inquiryType": "transfer" | "card_bill" | "travel_bundle"` 및 바인딩 경로들을 포함하세요.
 
-        [출력 예시 (정확히 이 4줄 형식을 따르세요)]
-        REPLY: 요청하신 인천공항 수령 엔화 환전 신청서를 준비했습니다. 외화 또는 원화를 수정하고 신청 버튼을 눌러주세요.
+        [출력 예시 (정확히 이 4줄 형식을 따르세요: createSurface → updateComponents → updateDataModel 순서)]
+        REPLY: 요청하신 인천공항 수령 엔화 환전 신청서를 준비했습니다. 외화 또는 원화를 수정하고 필수 약관 동의 후 신청 버튼을 눌러주세요.
         {"version":"v0.9.1","createSurface":{"surfaceId":"exchange_surface","catalogId":"${DroidKnightsCatalogs.BASIC_CATALOG_ID}","sendDataModel":true}}
-        {"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"currency":"JPY","jpyAmount":50000,"krwAmount":423940,"branch":["ICN_T1"],"coupon90":true,"accountPin":"1234"}}}
-        {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[{"id":"root","component":"Column","children":["exchange_card"]},{"id":"exchange_card","component":"Card","child":"card_col"},{"id":"card_col","component":"Column","children":["title","rate_chart","exchange_converter","branch_picker","coupon_chk","pin_input","btn_submit"]},{"id":"title","component":"Text","text":"💴 JPY 인천공항 원샷 환전 (1/2단계)"},{"id":"rate_chart","component":"MetricSparkline","metricName":"JPY/KRW (90% 우대)","currentValue":"847.88 원","severity":"normal","points":[0.75,0.68,0.55,0.42,0.31,0.22]},{"id":"exchange_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"환전 금액 (외화 ↔ 원화 자동 계산)","exchangeRate":847.88,"unitScale":100,"foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"}},{"id":"branch_picker","component":"ChoicePicker","label":"수령 지점","variant":"mutuallyExclusive","options":[{"label":"인천공항 제1터미널","value":"ICN_T1"},{"label":"인천공항 제2터미널","value":"ICN_T2"}],"value":{"path":"/exchange/branch"}},{"id":"coupon_chk","component":"CheckBox","label":"주거래 급여통장 출금 · 90% 환율 우대","value":{"path":"/exchange/coupon90"}},{"id":"pin_input","component":"TextField","label":"계좌 비밀번호 4자리","value":{"path":"/exchange/accountPin"}},{"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"gemini_custom","currency":"JPY","foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"},"branch":{"path":"/exchange/branch"},"coupon90":{"path":"/exchange/coupon90"}}}}},{"id":"btn_txt","component":"Text","text":"환전 신청 및 수령 바우처 설정 →"}]}}
+        {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[{"id":"root","component":"Column","children":["exchange_card"]},{"id":"exchange_card","component":"Card","child":"card_col"},{"id":"card_col","component":"Column","children":["title","exchange_converter","branch_picker","coupon_chk","terms_forex_chk","terms_pickup_chk","btn_submit"]},{"id":"title","component":"Text","text":"💴 JPY 인천공항 원샷 환전 (1/2단계)"},{"id":"exchange_converter","component":"BidirectionalExchangeInput","currencyCode":"JPY","currencyLabel":"환전 금액 (외화 ↔ 원화 자동 계산)","exchangeRate":847.88,"unitScale":100,"foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"}},{"id":"branch_picker","component":"ChoicePicker","label":"수령 지점","variant":"mutuallyExclusive","options":[{"label":"인천공항 제1터미널","value":"ICN_T1"},{"label":"인천공항 제2터미널","value":"ICN_T2"}],"value":{"path":"/exchange/branch"}},{"id":"coupon_chk","component":"CheckBox","label":"주거래 급여통장 출금 · 90% 환율 우대","value":{"path":"/exchange/coupon90"}},{"id":"terms_forex_chk","component":"CheckBox","label":"[필수] 외국환거래법 및 인터넷 환전 유의사항 동의","value":{"path":"/exchange/agreeForexTerms"}},{"id":"terms_pickup_chk","component":"CheckBox","label":"[필수] 공항 여권 지참 및 미수령 환불 규정 동의","value":{"path":"/exchange/agreePickupTerms"}},{"id":"btn_submit","component":"Button","child":"btn_txt","variant":"primary","action":{"event":{"name":"submit_exchange","context":{"case":"gemini_custom","currency":"JPY","foreignAmount":{"path":"/exchange/jpyAmount"},"krwAmount":{"path":"/exchange/krwAmount"},"branch":{"path":"/exchange/branch"},"coupon90":{"path":"/exchange/coupon90"},"agreeForexTerms":{"path":"/exchange/agreeForexTerms"},"agreePickupTerms":{"path":"/exchange/agreePickupTerms"}}}}},{"id":"btn_txt","component":"Text","text":"환전 신청하기"}]}}
+        {"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange","value":{"currency":"JPY","jpyAmount":50000,"krwAmount":423940,"branch":["ICN_T1"],"coupon90":true,"agreeForexTerms":false,"agreePickupTerms":false}}}
 
         [클라이언트 등록 카탈로그 JSON 스키마 (catalog.toJsonSchemaString())]
         $catalogSchema
         """.trimIndent()
+
+    private fun buildStage2FollowUpSystemPrompt(): String =
+        """
+        당신은 DK 뱅크 모바일 금융 슈퍼앱의 외화 환전 AI 비서입니다.
+        클라이언트로부터 1단계 환전 신청 이벤트(`submit_exchange`)와 context(외화 금액, 원화 금액, 수령 지점)를 수신했습니다.
+        절대로 차트(`MetricSparkline`)나 1단계 `submit_exchange` 폼을 다시 출력하지 마세요.
+        첫 줄에 `REPLY: <한국어 안내 문장>`을 출력하고, 이어서 마크다운 코드블록(```) 없이 **2단계(수령 바우처 방식 설정)** A2UI v0.9.1 JSONL 2줄(`updateComponents` → `updateDataModel` 순서)만 출력하세요.
+
+        [2단계 출력 예시 (정확히 3줄 형식: REPLY → updateComponents → updateDataModel)]
+        REPLY: 전송된 데이터 모델(50,000 JPY (423,940원) · 인천공항 제1터미널)로 환전 신청이 접수되었습니다. 수령 바우처 발급 방식을 선택해 다음 액션을 완료해 주세요.
+        {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[{"id":"root","component":"Column","children":["exchange_next_card"]},{"id":"exchange_next_card","component":"Card","child":"exchange_next_col"},{"id":"exchange_next_col","component":"Column","children":["next_title","next_summary_txt","next_branch_txt","picker_method","chk_push","tf_phone","btn_issue_qr","btn_back_edit"]},{"id":"next_title","component":"Text","text":"✅ [2/2단계] 환전 접수 완료 · 수령 바우처 설정"},{"id":"next_summary_txt","component":"Text","text":"💰 확정 환전 금액: 50,000 JPY (423,940원) (90% 환율 우대 · 출금 완료)"},{"id":"next_branch_txt","component":"Text","text":"📍 지정 수령처: 인천공항 제1터미널 (접수번호 EX-2026-8492)"},{"id":"picker_method","component":"ChoicePicker","label":"외화 수령 방식 선택","variant":"mutuallyExclusive","options":[{"label":"모바일 QR 바우처 (공항 무인환전기 즉시 수령)","value":"qr_kiosk"},{"label":"공항 창구 수령","value":"branch_counter"},{"label":"트래블카드 충전","value":"travel_card"}],"value":{"path":"/exchangeNext/pickupMethod"}},{"id":"chk_push","component":"CheckBox","label":"출국 당일 공항 도착 시 수령 창구 위치 알림 받기","value":{"path":"/exchangeNext/arrivalPush"}},{"id":"tf_phone","component":"TextField","label":"바우처 수신 연락처","value":{"path":"/exchangeNext/recipientPhone"}},{"id":"btn_issue_qr","component":"Button","variant":"primary","child":"btn_issue_qr_txt","action":{"event":{"name":"issue_exchange_voucher","context":{"summary":{"path":"/exchangeNext/summary"},"branchLabel":{"path":"/exchangeNext/branchLabel"},"pickupMethod":{"path":"/exchangeNext/pickupMethod"},"arrivalPush":{"path":"/exchangeNext/arrivalPush"},"recipientPhone":{"path":"/exchangeNext/recipientPhone"}}}}},{"id":"btn_issue_qr_txt","component":"Text","text":"모바일 수령 QR 바우처 발급 확정"},{"id":"btn_back_edit","component":"Button","variant":"borderless","child":"btn_back_edit_txt","action":{"event":{"name":"reset_exchange_surface","context":{"reason":"edit_again"}}}},{"id":"btn_back_edit_txt","component":"Text","text":"금액 다시 입력"}]}}
+        {"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchangeNext","value":{"summary":"50,000 JPY (423,940원)","branchLabel":"인천공항 제1터미널","pickupMethod":["qr_kiosk"],"arrivalPush":true,"recipientPhone":"010-2026-8492"}}}
+        """.trimIndent()
+
+    private fun buildStage3FollowUpSystemPrompt(voucherCode: String): String =
+        """
+        당신은 DK 뱅크 모바일 금융 슈퍼앱의 외화 환전 AI 비서입니다.
+        클라이언트로부터 2단계 수령 방식 확정 이벤트(`issue_exchange_voucher`)와 context(확정 금액, 수령처, 수령 방식, 연락처)를 수신했습니다.
+        절대로 차트(`MetricSparkline`)나 이전 단계 버튼(`submit_exchange`, `issue_exchange_voucher`)을 다시 출력하지 마세요.
+        첫 줄에 `REPLY: <한국어 바우처 발급 완료 안내 문장>`을 출력하고, 이어서 마크다운 코드블록(```) 없이 **3단계(모바일 QR 바우처 발급 완료)** A2UI v0.9.1 JSONL 1줄(`updateComponents`)만 출력하세요.
+
+        [3단계 출력 예시 (정확히 2줄 형식: REPLY → updateComponents)]
+        REPLY: 모바일 수령 바우처(모바일 QR 바우처 (공항 무인환전기))가 010-2026-8492 번호로 발급되었습니다. 공항 수령 시 QR 코드를 제시해 주세요.
+        {"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[{"id":"root","component":"Column","children":["exchange_done_card"]},{"id":"exchange_done_card","component":"Card","child":"exchange_done_col"},{"id":"exchange_done_col","component":"Column","children":["done_title","done_status_txt","done_info1","done_info2","done_info3","btn_new_exchange"]},{"id":"done_title","component":"Text","text":"🎫 외화 환전 및 모바일 QR 바우처 발급 완료"},{"id":"done_status_txt","component":"Text","text":"• 바우처 번호: $voucherCode (발급 완료 · 수령 대기)"},{"id":"done_info1","component":"Text","text":"• 확정 금액: 50,000 JPY (423,940원)"},{"id":"done_info2","component":"Text","text":"• 수령 지점 및 방식: 인천공항 제1터미널 · 모바일 QR 바우처 (공항 무인환전기)"},{"id":"done_info3","component":"Text","text":"• 알림 발송 연락처: 010-2026-8492"},{"id":"btn_new_exchange","component":"Button","variant":"primary","child":"btn_new_exchange_txt","action":{"event":{"name":"reset_exchange_surface","context":{"reason":"new_exchange"}}}},{"id":"btn_new_exchange_txt","component":"Text","text":"새로운 환전 신청하기"}]}}
+        """.trimIndent()
+
+    private fun buildBankingInquiryDoneSystemPrompt(event: A2uiClientEventMessage): String {
+        val (refReply, refLines) = CurrencyExchangePayloads.buildBankingInquiryDoneJsonl(event)
+        val compLine = refLines.firstOrNull() ?: ""
+        return """
+        당신은 DK 뱅크 모바일 금융 슈퍼앱의 AI 금융비서입니다.
+        클라이언트로부터 금융 실행 완료 이벤트(`submit_banking_inquiry`)와 context를 수신했습니다.
+        첫 줄에 `REPLY: <한국어 완료 안내 문장>`을 출력하고, 이어서 마크다운 코드블록(```) 없이 완료 카드 A2UI v0.9.1 JSONL 1줄(`updateComponents`)만 출력하세요.
+
+        [출력 예시 (정확히 2줄 형식: REPLY → updateComponents)]
+        REPLY: $refReply
+        $compLine
+        """.trimIndent()
+    }
 
     private fun buildFollowUpSystemPrompt(catalogSchema: String): String =
         """

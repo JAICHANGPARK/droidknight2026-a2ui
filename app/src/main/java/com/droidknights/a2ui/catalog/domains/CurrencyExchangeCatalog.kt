@@ -8,6 +8,7 @@ import androidx.compose.material3.a2ui.catalog.materialA2uiBasicCatalogV1
 import com.droidknights.a2ui.catalog.components.ActionGuardContainerComponent
 import com.droidknights.a2ui.catalog.components.BidirectionalExchangeInputComponent
 import com.droidknights.a2ui.catalog.components.MetricSparklineComponent
+import com.droidknights.a2ui.catalog.functions.A2uiBanknoteDenominationFunction
 import com.droidknights.a2ui.catalog.hooks.DefaultA2uiMediaRenderers
 
 /**
@@ -45,7 +46,7 @@ object CurrencyExchangeCatalog {
         return A2uiCatalog(
             catalogId = catalogId,
             components = baseM3.components + domainComponents,
-            functions = baseM3.functions,
+            functions = baseM3.functions + A2uiBanknoteDenominationFunction.INSTANCE,
             themeSchema = baseM3.themeSchema,
         )
     }

@@ -33,6 +33,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -63,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
@@ -562,6 +564,7 @@ fun A2uiAgentChatScaffold(
     expectedJsonlCount: Int = 3,
     conversationalQuestions: List<Pair<String, String>> = emptyList(),
     onUserSendPrompt: ((String) -> Unit)? = null,
+    onStopStreaming: (() -> Unit)? = null,
     onNavigateBack: (() -> Unit)? = null,
     extraHeaderControls: (@Composable () -> Unit)? = null,
     extraTimelineBanners: (@Composable () -> Unit)? = null,
@@ -1005,8 +1008,11 @@ fun A2uiAgentChatScaffold(
                             conversationalQuestions.forEach { (chipLabel, fullQuestion) ->
                                 AssistChip(
                                     onClick = {
-                                        sendPromptMessage(fullQuestion, null)
+                                        if (!isStreaming) {
+                                            sendPromptMessage(fullQuestion, null)
+                                        }
                                     },
+                                    enabled = !isStreaming,
                                     label = {
                                         Text(
                                             text = chipLabel,
@@ -1019,8 +1025,11 @@ fun A2uiAgentChatScaffold(
                                 val isSelected = selectedPromptIndex == index && customSubmittedMessage == null
                                 SuggestionChip(
                                     onClick = {
-                                        sendPromptMessage(preset.userPromptText, index)
+                                        if (!isStreaming) {
+                                            sendPromptMessage(preset.userPromptText, index)
+                                        }
                                     },
+                                    enabled = !isStreaming,
                                     label = {
                                         Text(
                                             text = "⚡ ${preset.shortChipLabel}",
@@ -1034,7 +1043,7 @@ fun A2uiAgentChatScaffold(
                             }
                         }
 
-                        // Messenger Input Row (TextField + Send Button)
+                        // Messenger Input Row (TextField + Send / Stop Button)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1043,10 +1052,13 @@ fun A2uiAgentChatScaffold(
                             OutlinedTextField(
                                 value = customInputText,
                                 onValueChange = { customInputText = it },
+                                enabled = !isStreaming,
                                 modifier = Modifier.weight(1f),
                                 placeholder = {
                                     Text(
-                                        text = "메시지를 입력하세요",
+                                        text =
+                                            if (isStreaming) "⏳ AI 응답 및 A2UI 화면 생성 중..."
+                                            else "메시지를 입력하세요",
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.bodyMedium,
@@ -1058,17 +1070,35 @@ fun A2uiAgentChatScaffold(
                                 keyboardActions =
                                     KeyboardActions(
                                         onSend = {
-                                            sendPromptMessage(customInputText, null)
+                                            if (!isStreaming) {
+                                                sendPromptMessage(customInputText, null)
+                                            }
                                         }
                                     ),
                             )
-                            Button(
-                                onClick = {
-                                    sendPromptMessage(customInputText, null)
-                                },
-                                shape = RoundedCornerShape(24.dp),
-                            ) {
-                                Text("전송", fontWeight = FontWeight.Bold)
+                            if (isStreaming) {
+                                Button(
+                                    onClick = {
+                                        onStopStreaming?.invoke() ?: onClearOutbound()
+                                    },
+                                    colors =
+                                        ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFFD9381E),
+                                            contentColor = Color.White,
+                                        ),
+                                    shape = RoundedCornerShape(24.dp),
+                                ) {
+                                    Text("■ 중지", fontWeight = FontWeight.Bold)
+                                }
+                            } else {
+                                Button(
+                                    onClick = {
+                                        sendPromptMessage(customInputText, null)
+                                    },
+                                    shape = RoundedCornerShape(24.dp),
+                                ) {
+                                    Text("전송", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }

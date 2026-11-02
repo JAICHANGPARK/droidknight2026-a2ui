@@ -41,17 +41,24 @@ import com.droidknights.a2ui.catalog.domains.CurrencyExchangeCatalog
 import com.droidknights.a2ui.common.A2uiAgentChatScaffold
 import com.droidknights.a2ui.common.A2uiGeminiApiClient
 import com.droidknights.a2ui.common.BiometricApprovalDialog
+import com.droidknights.a2ui.common.ExchangeDenominationRuleDialog
+import com.droidknights.a2ui.common.ExchangeTermsAgreementDialog
 import com.droidknights.a2ui.common.ExchangeVoucherItem
 import com.droidknights.a2ui.common.ExchangeVoucherQrDialog
 import com.droidknights.a2ui.common.ExchangeVoucherQrTicketCard
+import com.droidknights.a2ui.common.GeminiA2uiResponse
 import com.droidknights.a2ui.common.GeminiApiSettingsDialog
 import com.droidknights.a2ui.common.LocalBankingAppState
 import com.droidknights.a2ui.common.PendingBiometricRequest
+import com.droidknights.a2ui.common.PendingDenominationRuleRequest
+import com.droidknights.a2ui.common.PendingTermsAgreementRequest
 import com.droidknights.a2ui.scenarios.legacy.LegacyCurrencyExchangeScreen
 import com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
 import java.text.NumberFormat
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -89,9 +96,12 @@ fun CurrencyExchangeDemo(
     var isStreaming by remember { mutableStateOf(false) }
     var isActionSubmitting by remember { mutableStateOf(false) }
     var streamingStatusText by remember { mutableStateOf<String?>(null) }
+    var activeGenerationJob by remember { mutableStateOf<Job?>(null) }
 
     // Biometric / PIN Approval Modal state for A2uiActionInterceptor
     var pendingBiometricRequest by remember { mutableStateOf<PendingBiometricRequest?>(null) }
+    var pendingTermsRequest by remember { mutableStateOf<PendingTermsAgreementRequest?>(null) }
+    var pendingDenominationRequest by remember { mutableStateOf<PendingDenominationRuleRequest?>(null) }
     // Track last submitted exchange parameters for Stage 3 voucher issuance & balance deduction
     var pendingExchangeCurrency by rememberSaveable { mutableStateOf("JPY") }
     var pendingExchangeForeignAmt by rememberSaveable { mutableLongStateOf(50_000L) }
@@ -123,10 +133,19 @@ fun CurrencyExchangeDemo(
                         if (action !is A2uiEventAction) return action
                         // Block duplicate clicks while streaming, while biometric dialog is open,
                         // or while a previous action is already being submitted.
-                        if (isActionSubmitting || isStreaming || pendingBiometricRequest != null) {
+                        if (
+                            isActionSubmitting ||
+                                isStreaming ||
+                                pendingBiometricRequest != null ||
+                                pendingTermsRequest != null ||
+                                pendingDenominationRequest != null
+                        ) {
                             return null
                         }
                         if (action.eventName == "submit_exchange" && hasDeductedInCurrentTurn) {
+                            return null
+                        }
+                        if (action.eventName == "issue_exchange_voucher" && issuedVoucherInTurn != null) {
                             return null
                         }
                         if (
@@ -158,6 +177,14 @@ fun CurrencyExchangeDemo(
                 interceptors = listOf(exchangeSecurityInterceptor),
             )
         }
+
+    pendingDenominationRequest?.let { req ->
+        ExchangeDenominationRuleDialog(request = req)
+    }
+
+    pendingTermsRequest?.let { req ->
+        ExchangeTermsAgreementDialog(request = req)
+    }
 
     pendingBiometricRequest?.let { req ->
         BiometricApprovalDialog(
@@ -210,6 +237,9 @@ fun CurrencyExchangeDemo(
         agentIntroOverride = null
         issuedVoucherInTurn = null
         hasDeductedInCurrentTurn = false
+        pendingDenominationRequest = null
+        pendingTermsRequest = null
+        pendingBiometricRequest = null
         isActionSubmitting = false
         isStreaming = true
 
@@ -224,19 +254,81 @@ fun CurrencyExchangeDemo(
                                 val ctx = msg.context
                                 val caseName = extractStringField(ctx, "case").orEmpty()
                                 val currency = extractStringField(ctx, "currency") ?: "JPY"
-                                val foreignAmt =
+                                val rawForeignAmt =
                                     extractLongAmount(
                                         ctx = ctx,
                                         keys = arrayOf("foreignAmount", "jpyAmount", "usdAmount", "autoJpyAmount", "sellJpyAmount", "amount"),
                                         default = if (currency == "USD") 1_200L else 50_000L,
                                     )
-                                val defaultKrw = computeDefaultKrwForCurrency(currency, foreignAmt)
-                                val krwAmt =
+                                val rawDefaultKrw = computeDefaultKrwForCurrency(currency, rawForeignAmt)
+                                val rawKrwAmt =
                                     extractLongAmount(
                                         ctx = ctx,
                                         keys = arrayOf("krwAmount", "usdKrwAmount", "autoKrwAmount", "sellKrwAmount"),
-                                        default = defaultKrw,
+                                        default = rawDefaultKrw,
                                     )
+                                var foreignAmt = rawForeignAmt
+                                var krwAmt = rawKrwAmt
+
+                                // Verify banknote denomination & minimum exchange amount rule (no foreign coins!)
+                                val (adjustedBanknoteAmt, denomRuleNote) =
+                                    CurrencyExchangePayloads.normalizeToBanknoteAmount(currency, rawForeignAmt)
+                                if (denomRuleNote != null && adjustedBanknoteAmt != rawForeignAmt) {
+                                    val adjustedKrwAmt = computeDefaultKrwForCurrency(currency, adjustedBanknoteAmt)
+                                    val denomDeferred = CompletableDeferred<Boolean>()
+                                    pendingDenominationRequest =
+                                        PendingDenominationRuleRequest(
+                                            currency = currency,
+                                            requestedAmount = rawForeignAmt,
+                                            adjustedBanknoteAmount = adjustedBanknoteAmt,
+                                            adjustedKrwAmount = adjustedKrwAmt,
+                                            ruleExplanation = denomRuleNote,
+                                            onAutoAdjustAndProceed = {
+                                                pendingDenominationRequest = null
+                                                denomDeferred.complete(true)
+                                            },
+                                            onDismissToEdit = {
+                                                pendingDenominationRequest = null
+                                                denomDeferred.complete(false)
+                                            },
+                                        )
+                                    val autoAdjustConfirmed = denomDeferred.await()
+                                    if (!autoAdjustConfirmed) {
+                                        interceptorAuditLog.add(
+                                            "⚠️ ActionInterceptor 보류: ${fmt.format(rawForeignAmt)} $currency 신청 불가 (동전 단위 환전 불가 · 지폐 최소 권종 단위로 수정 필요)",
+                                        )
+                                        streamingStatusText =
+                                            "⚠️ $denomRuleNote"
+                                        return@collect
+                                    }
+                                    foreignAmt = adjustedBanknoteAmt
+                                    krwAmt = adjustedKrwAmt
+                                    // Sync A2UI DataModel paths to the valid banknote amount
+                                    val patchLines =
+                                        when (caseName) {
+                                            "auto_target_rate" ->
+                                                listOf(
+                                                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange/autoJpyAmount","value":$adjustedBanknoteAmt}}""",
+                                                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange/autoKrwAmount","value":$adjustedKrwAmt}}""",
+                                                )
+                                            "sell_remaining_jpy" ->
+                                                listOf(
+                                                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange/sellJpyAmount","value":$adjustedBanknoteAmt}}""",
+                                                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange/sellKrwAmount","value":$adjustedKrwAmt}}""",
+                                                )
+                                            "usd_small_bills" ->
+                                                listOf(
+                                                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange/usdAmount","value":$adjustedBanknoteAmt}}""",
+                                                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange/usdKrwAmount","value":$adjustedKrwAmt}}""",
+                                                )
+                                            else ->
+                                                listOf(
+                                                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange/jpyAmount","value":$adjustedBanknoteAmt}}""",
+                                                    """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange/krwAmount","value":$adjustedKrwAmt}}""",
+                                                )
+                                        }
+                                    patchLines.forEach { processor.processInput(parser, it) }
+                                }
                                 val branchRaw = extractFirstSelectionOrString(ctx, "branch", "branchLabel") ?: "ICN_T1"
                                 val branchLabel =
                                     when (branchRaw) {
@@ -246,10 +338,62 @@ fun CurrencyExchangeDemo(
                                     }
                                 val isSellBack = caseName == "sell_remaining_jpy"
 
-                                // Show Biometric / PIN Approval Dialog with the REAL dereferenced amounts from msg.context!
+                                // Verify mandatory foreign exchange terms CheckBoxes (`agreeForexTerms` & `agreePickupTerms`)
+                                val agreeForex = extractBooleanField(ctx, "agreeForexTerms", default = false)
+                                val agreePickup = extractBooleanField(ctx, "agreePickupTerms", default = false)
+                                if (!agreeForex || !agreePickup) {
+                                    val termsDeferred = CompletableDeferred<Boolean>()
+                                    pendingTermsRequest =
+                                        PendingTermsAgreementRequest(
+                                            agreeForexChecked = agreeForex,
+                                            agreePickupChecked = agreePickup,
+                                            onAgreeAllAndProceed = {
+                                                pendingTermsRequest = null
+                                                termsDeferred.complete(true)
+                                            },
+                                            onDismissToManualCheck = {
+                                                pendingTermsRequest = null
+                                                termsDeferred.complete(false)
+                                            },
+                                        )
+                                    val agreedAllInModal = termsDeferred.await()
+                                    if (!agreedAllInModal) {
+                                        interceptorAuditLog.add(
+                                            "⚠️ ActionInterceptor 보류: 필수 환전 약관 2건('[필수] 외국환거래법 유의사항', '[필수] 공항 여권 지참 및 환불 규정') 체크 후 다시 신청해 주세요.",
+                                        )
+                                        streamingStatusText =
+                                            "⚠️ 하단의 [필수] 환전 약관 체크박스 2건을 모두 체크한 뒤 '환전 신청하기'를 눌러주세요."
+                                        return@collect
+                                    }
+                                    // Automatically check both boxes in A2UI DataModel so UI reflects full agreement
+                                    val checkForexLine =
+                                        """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange/agreeForexTerms","value":true}}"""
+                                    val checkPickupLine =
+                                        """{"version":"v0.9.1","updateDataModel":{"surfaceId":"exchange_surface","path":"/exchange/agreePickupTerms","value":true}}"""
+                                    processor.processInput(parser, checkForexLine)
+                                    processor.processInput(parser, checkPickupLine)
+                                }
+
+                                val effectiveCtx =
+                                    ctx.toMutableMap().apply {
+                                        put("foreignAmount", foreignAmt)
+                                        put("krwAmount", krwAmt)
+                                        put("agreeForexTerms", true)
+                                        put("agreePickupTerms", true)
+                                    }
+                                val effectiveEventMsg =
+                                    A2uiClientEventMessage(
+                                        surfaceId = msg.surfaceId,
+                                        componentId = msg.componentId,
+                                        timestamp = msg.timestamp,
+                                        type = msg.type,
+                                        context = effectiveCtx,
+                                    )
+
+                                // Show Biometric / PIN Approval Dialog with the REAL dereferenced amounts!
                                 val approvalDeferred = CompletableDeferred<Boolean>()
                                 val (title, subtitle, amountLabel, deductionKrw) =
-                                    buildBiometricPromptMetadata("submit_exchange", ctx, fmt)
+                                    buildBiometricPromptMetadata("submit_exchange", effectiveCtx, fmt)
                                 val availableBalance = bankingState.mainAccountBalance
                                 val isInsufficient = deductionKrw > 0L && deductionKrw > availableBalance
 
@@ -291,22 +435,23 @@ fun CurrencyExchangeDemo(
                                 hasDeductedInCurrentTurn = true
                                 isStreaming = true
                                 streamingStatusText =
-                                    "📡 [환전 완료 · 계좌 출금 반영] 모바일 QR 바우처 발급 완료 서피스 업데이트 중..."
+                                    if (isSellBack) "📡 [재환전 완료 · 계좌 입금 반영] 완료 서피스 업데이트 중..."
+                                    else "📡 [2/3단계] 환전 접수 완료 · 수령 바우처 설정 서피스 전환 중..."
                                 val lockBtnLine =
-                                    """{"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[{"id":"btn_submit","component":"Card","child":"btn_txt"},{"id":"btn_txt","component":"Text","text":"⏳ 환전 신청 처리 및 QR 바우처 발급 중..."}]}}"""
+                                    """{"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[{"id":"btn_submit","component":"Card","child":"btn_txt"},{"id":"btn_txt","component":"Text","text":"⏳ 환전 신청 접수 및 2단계 수령 설정 전환 중..."}]}}"""
                                 processor.processInput(parser, lockBtnLine)
 
                                 interceptorAuditLog.add(
                                     "🛡️ ActionInterceptor 승인: 'submit_exchange' (${fmt.format(foreignAmt)} $currency · ${fmt.format(krwAmt)}원 · 로컬 생체인증 서명 주입 완료)",
                                 )
-                                outboundLog.add(msg)
+                                outboundLog.add(effectiveEventMsg)
 
                                 pendingExchangeCurrency = currency
                                 pendingExchangeForeignAmt = foreignAmt
                                 pendingExchangeKrwAmt = krwAmt
                                 pendingExchangeIsSellBack = isSellBack
 
-                                // Deduct real banking account balance immediately upon exchange submission approval!
+                                // Deduct real banking account balance upon exchange submission approval!
                                 val voucher =
                                     bankingState.recordCurrencyExchange(
                                         currency = currency,
@@ -317,37 +462,131 @@ fun CurrencyExchangeDemo(
                                         recipientPhone = "010-2026-8492",
                                         isSellBack = isSellBack,
                                     )
-                                issuedVoucherInTurn = voucher
 
-                                val (reply, nextLines) =
-                                    CurrencyExchangePayloads.buildOneShotExchangeCompletedJsonl(
-                                        event = msg,
-                                        voucherCode = voucher.voucherCode,
-                                    )
-
-                                val balanceNotice =
-                                    if (isSellBack) {
+                                if (isSellBack) {
+                                    issuedVoucherInTurn = voucher
+                                    val (reply, nextLines) =
+                                        CurrencyExchangePayloads.buildOneShotExchangeCompletedJsonl(
+                                            event = effectiveEventMsg,
+                                            voucherCode = voucher.voucherCode,
+                                        )
+                                    val balanceNotice =
                                         "입금 완료 · 주거래 통장 잔액: ${fmt.format(bankingState.mainAccountBalance)}원"
-                                    } else {
-                                        "${fmt.format(krwAmt)}원 출금 완료 · 주거래 통장 잔액: ${fmt.format(bankingState.mainAccountBalance)}원"
+                                    agentActionReplies.add("$reply ($balanceNotice)")
+                                    nextLines.forEachIndexed { idx, line ->
+                                        delay(if (idx == 0) 120L else 180L)
+                                        jsonlLines.add(line)
+                                        processor.processInput(parser, line)
                                     }
-                                agentActionReplies.add("$reply ($balanceNotice)")
-                                nextLines.forEachIndexed { idx, line ->
-                                    delay(if (idx == 0) 120L else 180L)
-                                    jsonlLines.add(line)
-                                    processor.processInput(parser, line)
+                                    isStreaming = false
+                                    streamingStatusText =
+                                        "✅ [재환전 입금 완료] 주거래 통장 잔액 ${fmt.format(bankingState.mainAccountBalance)}원 반영"
+                                } else {
+                                    // Transition to Stage 2 (수령 바우처 방식 설정) — generated & streamed live by LLM when isGeminiActive!
+                                    val (fallbackStage2Reply, fallbackStage2Lines) =
+                                        CurrencyExchangePayloads.buildFollowUpVoucherStepJsonl(effectiveEventMsg)
+                                    val replyIdx = agentActionReplies.size
+                                    agentActionReplies.add("⏳ AI가 2단계 수령 바우처 설정 화면을 실시간 생성 중입니다...")
+
+                                    if (isGeminiActive) {
+                                        val modePrefix =
+                                            if (isLmStudioActive) "🖥️ LM Studio ($geminiModel)"
+                                            else "✨ Gemini ($geminiModel)"
+                                        streamingStatusText =
+                                            "📡 [$modePrefix · 2단계] 수령 바우처 설정 JSONL 실시간 SSE 스트리밍 중..."
+                                        val streamedStage2Lines = mutableListOf<String>()
+                                        var capturedStage2Result: GeminiA2uiResponse? = null
+                                        val s2Job =
+                                            launch {
+                                                capturedStage2Result =
+                                                    runCatching {
+                                                        A2uiGeminiApiClient.streamFollowUpExchangeSurface(
+                                                            context = context,
+                                                            catalog = catalog,
+                                                            event = effectiveEventMsg,
+                                                            voucherCode = voucher.voucherCode,
+                                                            onReplyDelta = { partialReply ->
+                                                                if (replyIdx in agentActionReplies.indices) {
+                                                                    agentActionReplies[replyIdx] = partialReply
+                                                                }
+                                                            },
+                                                            onJsonlLine = { line ->
+                                                                streamedStage2Lines.add(line)
+                                                                jsonlLines.add(line)
+                                                                processor.processInput(parser, line)
+                                                                streamingStatusText =
+                                                                    "📡 [$modePrefix · 2단계] JSONL 수신 (${streamedStage2Lines.size}/2줄)"
+                                                            },
+                                                        ).getOrNull()
+                                                    }.getOrNull()
+                                            }
+                                        activeGenerationJob = s2Job
+                                        s2Job.join()
+                                        val stage2Result = capturedStage2Result
+
+                                        val hasStage2Components =
+                                            streamedStage2Lines.any {
+                                                it.contains("\"updateComponents\"") &&
+                                                    it.contains("\"issue_exchange_voucher\"")
+                                            }
+                                        val hasStage2DataModel =
+                                            streamedStage2Lines.any {
+                                                it.contains("\"updateDataModel\"") &&
+                                                    it.contains("\"/exchangeNext\"")
+                                            }
+
+                                        if (stage2Result != null && hasStage2Components && hasStage2DataModel) {
+                                            if (replyIdx in agentActionReplies.indices) {
+                                                agentActionReplies[replyIdx] = stage2Result.agentReplyText
+                                            }
+                                            interceptorAuditLog.add(
+                                                "📡 [2단계 SSE 완료] ${stage2Result.modelUsed}가 수령 바우처 설정 JSONL(${streamedStage2Lines.size}줄) 직접 생성",
+                                            )
+                                        } else {
+                                            if (replyIdx in agentActionReplies.indices) {
+                                                agentActionReplies[replyIdx] =
+                                                    stage2Result?.agentReplyText ?: fallbackStage2Reply
+                                            }
+                                            // Supply any missing Stage 2 line(s) so no bound field stays in Shimmer
+                                            fallbackStage2Lines.forEachIndexed { idx, line ->
+                                                val isDataLine = line.contains("\"updateDataModel\"")
+                                                val isCompLine = line.contains("\"updateComponents\"")
+                                                if (
+                                                    (isDataLine && !hasStage2DataModel) ||
+                                                        (isCompLine && !hasStage2Components)
+                                                ) {
+                                                    delay(if (idx == 0) 80L else 120L)
+                                                    jsonlLines.add(line)
+                                                    processor.processInput(parser, line)
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        if (replyIdx in agentActionReplies.indices) {
+                                            agentActionReplies[replyIdx] = fallbackStage2Reply
+                                        }
+                                        fallbackStage2Lines.forEachIndexed { idx, line ->
+                                            delay(if (idx == 0) 120L else 180L)
+                                            jsonlLines.add(line)
+                                            processor.processInput(parser, line)
+                                        }
+                                    }
+                                    isStreaming = false
+                                    streamingStatusText =
+                                        "✅ [2단계 · 수령 바우처 방식 설정] 수령 방식 및 연락처를 확인하고 '모바일 수령 QR 바우처 발급 확정'을 눌러주세요."
                                 }
-                                isStreaming = false
-                                streamingStatusText =
-                                    "✅ [환전 및 QR 바우처 발급 완료] 주거래 통장 잔액 ${fmt.format(bankingState.mainAccountBalance)}원 반영 · 바우처(${voucher.voucherCode}) 발급 (총 ${bankingState.exchangeVouchers.size}건 보유)"
                             }
                             "issue_exchange_voucher" -> {
+                                if (issuedVoucherInTurn != null) return@collect
                                 outboundLog.add(msg)
                                 isStreaming = true
-                                streamingStatusText = "📡 [바우처 확정] 모바일 QR 바우처 수령 방식 업데이트 중..."
+                                streamingStatusText = "📡 [3단계 · 모바일 QR 바우처 완료] 모바일 QR 바우처 발급 서피스 업데이트 중..."
+                                val lockIssueBtnLine =
+                                    """{"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[{"id":"btn_issue_qr","component":"Card","child":"btn_issue_qr_txt"},{"id":"btn_issue_qr_txt","component":"Text","text":"⏳ AI가 3단계 모바일 수령 QR 바우처를 생성 중입니다..."}]}}"""
+                                processor.processInput(parser, lockIssueBtnLine)
 
                                 val ctx = msg.context
-                                val branchLabel = extractStringField(ctx, "branchLabel") ?: "인천공항 1터미널"
+                                val branchLabel = extractStringField(ctx, "branchLabel") ?: "인천공항 제1터미널"
                                 val methodRaw = extractFirstSelectionOrString(ctx, "pickupMethod") ?: "qr_kiosk"
                                 val methodLabel =
                                     when (methodRaw) {
@@ -385,21 +624,91 @@ fun CurrencyExchangeDemo(
                                             isSellBack = pendingExchangeIsSellBack,
                                         )
                                     }
-                                issuedVoucherInTurn = voucher
 
-                                val (reply, doneLines) =
-                                    CurrencyExchangePayloads.buildFinalVoucherIssuedJsonl(msg)
-                                agentActionReplies.add(
-                                    "$reply (주거래 통장 잔액: ${fmt.format(bankingState.mainAccountBalance)}원)"
-                                )
-                                doneLines.forEach { line ->
-                                    delay(160L)
-                                    jsonlLines.add(line)
-                                    processor.processInput(parser, line)
+                                val (fallbackStage3Reply, fallbackStage3Lines) =
+                                    CurrencyExchangePayloads.buildFinalVoucherIssuedJsonl(
+                                        event = msg,
+                                        voucherCode = voucher.voucherCode,
+                                    )
+                                val replyIdx = agentActionReplies.size
+                                val balanceSuffix = "(주거래 통장 잔액: ${fmt.format(bankingState.mainAccountBalance)}원)"
+                                agentActionReplies.add("⏳ AI가 3단계 QR 바우처 발급 완료 서피스를 실시간 생성 중입니다...")
+
+                                if (isGeminiActive) {
+                                    val modePrefix =
+                                        if (isLmStudioActive) "🖥️ LM Studio ($geminiModel)"
+                                        else "✨ Gemini ($geminiModel)"
+                                    streamingStatusText =
+                                        "📡 [$modePrefix · 3단계] QR 바우처 완료 JSONL 실시간 SSE 스트리밍 중..."
+                                    val streamedStage3Lines = mutableListOf<String>()
+                                    var capturedStage3Result: GeminiA2uiResponse? = null
+                                    val s3Job =
+                                        launch {
+                                            capturedStage3Result =
+                                                runCatching {
+                                                    A2uiGeminiApiClient.streamFollowUpExchangeSurface(
+                                                        context = context,
+                                                        catalog = catalog,
+                                                        event = msg,
+                                                        voucherCode = voucher.voucherCode,
+                                                        onReplyDelta = { partialReply ->
+                                                            if (replyIdx in agentActionReplies.indices) {
+                                                                agentActionReplies[replyIdx] = "$partialReply $balanceSuffix"
+                                                            }
+                                                        },
+                                                        onJsonlLine = { line ->
+                                                            streamedStage3Lines.add(line)
+                                                            jsonlLines.add(line)
+                                                            processor.processInput(parser, line)
+                                                            streamingStatusText =
+                                                                "📡 [$modePrefix · 3단계] JSONL 수신 완료"
+                                                        },
+                                                    ).getOrNull()
+                                                }.getOrNull()
+                                        }
+                                    activeGenerationJob = s3Job
+                                    s3Job.join()
+                                    val stage3Result = capturedStage3Result
+
+                                    val hasValidStage3Card =
+                                        streamedStage3Lines.any {
+                                            it.contains("\"updateComponents\"") &&
+                                                it.contains("\"reset_exchange_surface\"")
+                                        }
+                                    if (stage3Result != null && hasValidStage3Card) {
+                                        if (replyIdx in agentActionReplies.indices) {
+                                            agentActionReplies[replyIdx] =
+                                                "${stage3Result.agentReplyText} $balanceSuffix"
+                                        }
+                                        interceptorAuditLog.add(
+                                            "📡 [3단계 SSE 완료] ${stage3Result.modelUsed}가 QR 바우처 발급 완료 JSONL(${streamedStage3Lines.size}줄) 직접 생성",
+                                        )
+                                    } else {
+                                        if (replyIdx in agentActionReplies.indices) {
+                                            agentActionReplies[replyIdx] =
+                                                "${stage3Result?.agentReplyText ?: fallbackStage3Reply} $balanceSuffix"
+                                        }
+                                        fallbackStage3Lines.forEach { line ->
+                                            delay(120L)
+                                            jsonlLines.add(line)
+                                            processor.processInput(parser, line)
+                                        }
+                                    }
+                                } else {
+                                    if (replyIdx in agentActionReplies.indices) {
+                                        agentActionReplies[replyIdx] = "$fallbackStage3Reply $balanceSuffix"
+                                    }
+                                    fallbackStage3Lines.forEach { line ->
+                                        delay(160L)
+                                        jsonlLines.add(line)
+                                        processor.processInput(parser, line)
+                                    }
                                 }
+
+                                issuedVoucherInTurn = voucher
                                 isStreaming = false
                                 streamingStatusText =
-                                    "✅ [완료] 모바일 수령 QR 바우처(${voucher.voucherCode}) 확정 완료"
+                                    "✅ [3단계 · 모바일 QR 바우처 완료] 바우처(${voucher.voucherCode}) 발급 완료 · 주거래 통장 잔액 ${fmt.format(bankingState.mainAccountBalance)}원"
                             }
                             "submit_banking_inquiry" -> {
                                 val ctx = msg.context
@@ -457,6 +766,9 @@ fun CurrencyExchangeDemo(
                                 outboundLog.add(msg)
                                 isStreaming = true
                                 streamingStatusText = "📡 [금융 거래 실행] 계좌 반영 및 완료 서피스 스트리밍 중..."
+                                val lockInqBtnLine =
+                                    """{"version":"v0.9.1","updateComponents":{"surfaceId":"exchange_surface","components":[{"id":"btn_submit","component":"Card","child":"btn_txt"},{"id":"btn_txt","component":"Text","text":"⏳ 거래 처리 및 완료 서피스 생성 중..."}]}}"""
+                                processor.processInput(parser, lockInqBtnLine)
                                 when (inquiryType) {
                                     "transfer" -> {
                                         val recipient = extractStringField(ctx, "recipient")?.ifBlank { "이지훈" } ?: "이지훈"
@@ -516,19 +828,70 @@ fun CurrencyExchangeDemo(
                                     }
                                 }
 
-                                val (reply, doneLines) =
+                                val (fallbackDoneReply, fallbackDoneLines) =
                                     CurrencyExchangePayloads.buildBankingInquiryDoneJsonl(msg)
-                                agentActionReplies.add(
-                                    "$reply (현재 주거래 통장 잔액: ${fmt.format(bankingState.mainAccountBalance)}원)"
-                                )
-                                doneLines.forEach { line ->
-                                    delay(160L)
-                                    jsonlLines.add(line)
-                                    processor.processInput(parser, line)
+                                val balanceSuffix = "(현재 주거래 통장 잔액: ${fmt.format(bankingState.mainAccountBalance)}원)"
+                                val replyIdx = agentActionReplies.size
+                                agentActionReplies.add("⏳ AI가 거래 완료 서피스를 실시간 생성 중입니다...")
+
+                                if (isGeminiActive) {
+                                    val modePrefix =
+                                        if (isLmStudioActive) "🖥️ LM Studio ($geminiModel)"
+                                        else "✨ Gemini ($geminiModel)"
+                                    val streamedDoneLines = mutableListOf<String>()
+                                    var doneResult: GeminiA2uiResponse? = null
+                                    val doneJob =
+                                        launch {
+                                            doneResult =
+                                                runCatching {
+                                                    A2uiGeminiApiClient.streamFollowUpExchangeSurface(
+                                                        context = context,
+                                                        catalog = catalog,
+                                                        event = msg,
+                                                        onReplyDelta = { partialReply ->
+                                                            if (replyIdx in agentActionReplies.indices) {
+                                                                agentActionReplies[replyIdx] = "$partialReply $balanceSuffix"
+                                                            }
+                                                        },
+                                                        onJsonlLine = { line ->
+                                                            streamedDoneLines.add(line)
+                                                            jsonlLines.add(line)
+                                                            processor.processInput(parser, line)
+                                                        },
+                                                    ).getOrNull()
+                                                }.getOrNull()
+                                        }
+                                    activeGenerationJob = doneJob
+                                    doneJob.join()
+                                    val finalReply =
+                                        doneResult?.agentReplyText?.takeIf { it.isNotBlank() }
+                                            ?: fallbackDoneReply
+                                    if (replyIdx in agentActionReplies.indices) {
+                                        agentActionReplies[replyIdx] = "$finalReply $balanceSuffix"
+                                    }
+                                    if (streamedDoneLines.isEmpty()) {
+                                        fallbackDoneLines.forEach { line ->
+                                            delay(120L)
+                                            jsonlLines.add(line)
+                                            processor.processInput(parser, line)
+                                        }
+                                    }
+                                    isStreaming = false
+                                    streamingStatusText =
+                                        "✅ [$modePrefix] 실시간 계좌 잔액 반영 및 완료 서피스 스트리밍 완료"
+                                } else {
+                                    if (replyIdx in agentActionReplies.indices) {
+                                        agentActionReplies[replyIdx] = "$fallbackDoneReply $balanceSuffix"
+                                    }
+                                    fallbackDoneLines.forEach { line ->
+                                        delay(160L)
+                                        jsonlLines.add(line)
+                                        processor.processInput(parser, line)
+                                    }
+                                    isStreaming = false
+                                    streamingStatusText =
+                                        "✅ [완료] 실시간 계좌 잔액 반영 및 거래 완료 서피스 업데이트 완료"
                                 }
-                                isStreaming = false
-                                streamingStatusText =
-                                    "✅ [완료] 실시간 계좌 잔액 반영 및 거래 완료 서피스 업데이트 완료"
                             }
                             "cancel_exchange_voucher" -> {
                                 outboundLog.add(msg)
@@ -600,145 +963,171 @@ fun CurrencyExchangeDemo(
                 (activeCustomQuery.contains("취소") || activeCustomQuery.contains("환불")) &&
                 bankingState.exchangeVouchers.isNotEmpty()
 
-        if (isCancelVoucherQuery) {
-            streamingStatusText = "🤖 [1/3] 환전 신청 취소 서피스 생성 중..."
-            val (cancelReply, cancelLines) =
-                CurrencyExchangePayloads.buildCancelExchangeVoucherJsonl(
-                    vouchers = bankingState.exchangeVouchers.toList(),
-                )
-            agentIntroOverride = cancelReply
-            streamJsonlLinesProgressively(
-                rawLines = cancelLines,
-                sourceLabel = "환전 취소 A2UI",
-            )
-            return@LaunchedEffect
-        }
-
-        if (isGeminiActive) {
-            val modePrefix = if (isLmStudioActive) "🖥️ LM Studio ($geminiModel)" else "✨ Gemini ($geminiModel)"
-            streamingStatusText = "📡 [$modePrefix] 실시간 SSE 스트리밍 연결 중..."
-            val isNonExchangeBankingTask =
-                (activeCustomQuery == null && selectedPrompt >= 2) ||
-                    (activeCustomQuery != null &&
-                        listOf("송금", "이체", "보내", "회비", "카드", "명세서", "결제", "출국", "보험", "재환전", "자동환전", "통장사본")
-                            .any { activeCustomQuery.contains(it) })
-            val useReplyOnly = isLmStudioActive && (pureTextReply != null || isNonExchangeBankingTask)
-            val geminiResult =
-                A2uiGeminiApiClient.streamCurrencyExchangeSurface(
-                    context = context,
-                    catalog = catalog,
-                    userPrompt = promptToUse,
-                    replyOnly = useReplyOnly,
-                    onReplyDelta = { partialReply ->
-                        agentIntroOverride = partialReply
-                        if (jsonlLines.isEmpty()) {
-                            streamingStatusText = "💬 [$modePrefix] 답변 실시간 스트리밍 중..."
-                        }
-                    },
-                    onJsonlLine = { line ->
-                        jsonlLines.add(line)
-                        processor.processInput(parser, line)
-                        val stepLabel =
-                            when {
-                                line.contains("\"createSurface\"") -> "createSurface 수신 → 서피스 초기화"
-                                line.contains("\"updateComponents\"") -> "updateComponents 수신 → UI 스켈레톤(Shimmer) 렌더링"
-                                line.contains("\"updateDataModel\"") -> "updateDataModel 수신 → 데이터 바인딩 완료"
-                                else -> "JSONL 수신"
-                            }
-                        streamingStatusText =
-                            "📡 [$modePrefix · ${jsonlLines.size}/3] $stepLabel"
-                    },
-                )
-            val response = geminiResult.getOrNull()
-            if (response != null) {
-                agentIntroOverride = response.agentReplyText
-                if (jsonlLines.isNotEmpty()) {
-                    interceptorAuditLog.add(
-                        "📡 AI 실시간 SSE 스트리밍 완료 (JSONL ${jsonlLines.size}줄): ${response.modelUsed}",
-                    )
-                    isStreaming = false
-                    streamingStatusText =
-                        "✅ [${response.modelUsed} · SSE 스트리밍 완료] 실시간 양방향 환전 서피스 활성화"
-                } else if (pureTextReply != null) {
-                    interceptorAuditLog.add(
-                        "📡 AI 실시간 텍스트 SSE 스트리밍 완료: ${response.modelUsed}",
-                    )
-                    isStreaming = false
-                    streamingStatusText = null
-                } else if (activeCustomQuery != null) {
-                    interceptorAuditLog.add(
-                        "🖥️ AI 답변 스트리밍 완료 (${response.modelUsed}) · JSONL 보완 적용",
-                    )
-                    val (_, dynLines) =
-                        CurrencyExchangePayloads.buildDynamicBankingJsonlForQuery(
-                            userQuery = activeCustomQuery,
-                            fallbackCaseIndex = selectedPrompt.coerceAtLeast(0),
+        activeGenerationJob =
+            launch {
+                try {
+                    if (isCancelVoucherQuery) {
+                        streamingStatusText = "🤖 [1/3] 환전 신청 취소 서피스 생성 중..."
+                        val (cancelReply, cancelLines) =
+                            CurrencyExchangePayloads.buildCancelExchangeVoucherJsonl(
+                                vouchers = bankingState.exchangeVouchers.toList(),
+                            )
+                        agentIntroOverride = cancelReply
+                        streamJsonlLinesProgressively(
+                            rawLines = cancelLines,
+                            sourceLabel = "환전 취소 A2UI",
                         )
-                    streamJsonlLinesProgressively(
-                        rawLines = dynLines,
-                        sourceLabel = "${response.modelUsed} + A2UI",
-                    )
-                } else {
-                    interceptorAuditLog.add(
-                        "🖥️ AI 답변 스트리밍 완료 (${response.modelUsed}) · JSONL 보완 적용",
-                    )
-                    val fallbackLines = CurrencyExchangePayloads.buildJsonl(selectedPrompt.coerceAtLeast(0))
-                    streamJsonlLinesProgressively(
-                        rawLines = fallbackLines,
-                        sourceLabel = "${response.modelUsed} + A2UI",
-                    )
+                        return@launch
+                    }
+
+                    if (isGeminiActive) {
+                        val modePrefix = if (isLmStudioActive) "🖥️ LM Studio ($geminiModel)" else "✨ Gemini ($geminiModel)"
+                        streamingStatusText = "📡 [$modePrefix] 실시간 SSE 스트리밍 연결 중..."
+                        val useReplyOnly = isLmStudioActive && (pureTextReply != null)
+                        val geminiResult =
+                            A2uiGeminiApiClient.streamCurrencyExchangeSurface(
+                                context = context,
+                                catalog = catalog,
+                                userPrompt = promptToUse,
+                                replyOnly = useReplyOnly,
+                                onReplyDelta = { partialReply ->
+                                    agentIntroOverride = partialReply
+                                    if (jsonlLines.isEmpty()) {
+                                        streamingStatusText = "💬 [$modePrefix] 답변 실시간 스트리밍 중..."
+                                    }
+                                },
+                                onJsonlLine = { line ->
+                                    jsonlLines.add(line)
+                                    processor.processInput(parser, line)
+                                    val stepLabel =
+                                        when {
+                                            line.contains("\"createSurface\"") -> "createSurface 수신 → 서피스 초기화"
+                                            line.contains("\"updateComponents\"") -> "updateComponents 수신 → UI 스켈레톤(Shimmer) 렌더링"
+                                            line.contains("\"updateDataModel\"") -> "updateDataModel 수신 → 데이터 바인딩 완료"
+                                            else -> "JSONL 수신"
+                                        }
+                                    streamingStatusText =
+                                        "📡 [$modePrefix · ${jsonlLines.size}/3] $stepLabel"
+                                },
+                            )
+                        val response = geminiResult.getOrNull()
+                        val hasStage1Components = jsonlLines.any { it.contains("\"updateComponents\"") }
+                        val hasStage1DataModel = jsonlLines.any { it.contains("\"updateDataModel\"") }
+                        if (response != null) {
+                            agentIntroOverride = response.agentReplyText
+                            if (hasStage1Components && hasStage1DataModel) {
+                                interceptorAuditLog.add(
+                                    "📡 AI 실시간 SSE 스트리밍 완료 (JSONL ${jsonlLines.size}줄): ${response.modelUsed}",
+                                )
+                                isStreaming = false
+                                streamingStatusText =
+                                    "✅ [${response.modelUsed} · SSE 스트리밍 완료] 실시간 양방향 환전 서피스 활성화"
+                            } else if (pureTextReply != null) {
+                                interceptorAuditLog.add(
+                                    "📡 AI 실시간 텍스트 SSE 스트리밍 완료: ${response.modelUsed}",
+                                )
+                                isStreaming = false
+                                streamingStatusText = null
+                            } else if (activeCustomQuery != null) {
+                                interceptorAuditLog.add(
+                                    "🖥️ AI 답변 스트리밍 완료 (${response.modelUsed}) · JSONL 보완 적용",
+                                )
+                                val (_, dynLines) =
+                                    CurrencyExchangePayloads.buildDynamicBankingJsonlForQuery(
+                                        userQuery = activeCustomQuery,
+                                        fallbackCaseIndex = selectedPrompt.coerceAtLeast(0),
+                                    )
+                                streamJsonlLinesProgressively(
+                                    rawLines = dynLines,
+                                    sourceLabel = "${response.modelUsed} + A2UI",
+                                )
+                            } else {
+                                interceptorAuditLog.add(
+                                    "🖥️ AI 답변 스트리밍 완료 (${response.modelUsed}) · JSONL 보완 적용",
+                                )
+                                val fallbackLines = CurrencyExchangePayloads.buildJsonl(selectedPrompt.coerceAtLeast(0))
+                                streamJsonlLinesProgressively(
+                                    rawLines = fallbackLines,
+                                    sourceLabel = "${response.modelUsed} + A2UI",
+                                )
+                            }
+                        } else if (pureTextReply != null) {
+                            delay(220L)
+                            agentIntroOverride = pureTextReply
+                            isStreaming = false
+                            streamingStatusText = null
+                        } else if (activeCustomQuery != null) {
+                            val (dynReply, dynLines) =
+                                CurrencyExchangePayloads.buildDynamicBankingJsonlForQuery(
+                                    userQuery = activeCustomQuery,
+                                    fallbackCaseIndex = selectedPrompt.coerceAtLeast(0),
+                                )
+                            agentIntroOverride = dynReply
+                            streamJsonlLinesProgressively(
+                                rawLines = dynLines,
+                                sourceLabel = "동적 A2UI 생성",
+                            )
+                        } else {
+                            val fallbackLines = CurrencyExchangePayloads.buildJsonl(selectedPrompt.coerceAtLeast(0))
+                            streamJsonlLinesProgressively(
+                                rawLines = fallbackLines,
+                                sourceLabel = "폴백 프리셋",
+                            )
+                        }
+                    } else {
+                        if (pureTextReply != null) {
+                            streamingStatusText = "💬 AI 금융비서가 답변을 작성 중입니다..."
+                            delay(220L)
+                            agentIntroOverride = pureTextReply
+                            isStreaming = false
+                            streamingStatusText = null
+                        } else if (activeCustomQuery != null) {
+                            streamingStatusText = "🤖 [1/3] createSurface 수신 중 · 서피스 초기화..."
+                            val (dynReply, dynLines) =
+                                CurrencyExchangePayloads.buildDynamicBankingJsonlForQuery(
+                                    userQuery = activeCustomQuery,
+                                    fallbackCaseIndex = selectedPrompt.coerceAtLeast(0),
+                                )
+                            agentIntroOverride = dynReply
+                            streamJsonlLinesProgressively(
+                                rawLines = dynLines,
+                                sourceLabel = "동적 A2UI 생성",
+                            )
+                        } else {
+                            streamingStatusText = "🤖 [1/3] createSurface 수신 중 · 서피스 초기화..."
+                            val rawLines = CurrencyExchangePayloads.buildJsonl(selectedPrompt.coerceAtLeast(0))
+                            streamJsonlLinesProgressively(
+                                rawLines = rawLines,
+                                sourceLabel = "프리셋 스트리밍",
+                            )
+                        }
+                    }
+                } catch (_: CancellationException) {
+                    // If user pressed Stop after updateComponents was emitted but before updateDataModel,
+                    // feed the fallback updateDataModel so the card doesn't stay stuck in Shimmer.
+                    val hasComp = jsonlLines.any { it.contains("\"updateComponents\"") }
+                    val hasData = jsonlLines.any { it.contains("\"updateDataModel\"") }
+                    if (hasComp && !hasData) {
+                        val fallbackDataLine =
+                            if (activeCustomQuery != null) {
+                                CurrencyExchangePayloads.buildDynamicBankingJsonlForQuery(
+                                    userQuery = activeCustomQuery,
+                                    fallbackCaseIndex = selectedPrompt.coerceAtLeast(0),
+                                ).second.firstOrNull { it.contains("\"updateDataModel\"") }
+                            } else {
+                                CurrencyExchangePayloads.buildJsonl(selectedPrompt.coerceAtLeast(0))
+                                    .firstOrNull { it.contains("\"updateDataModel\"") }
+                            }
+                        if (fallbackDataLine != null) {
+                            jsonlLines.add(fallbackDataLine)
+                            processor.processInput(parser, fallbackDataLine)
+                        }
+                    }
+                    isStreaming = false
+                    isActionSubmitting = false
+                    streamingStatusText = "⏹️ 사용자 요청으로 AI 생성이 중지되었습니다."
                 }
-            } else if (pureTextReply != null) {
-                delay(220L)
-                agentIntroOverride = pureTextReply
-                isStreaming = false
-                streamingStatusText = null
-            } else if (activeCustomQuery != null) {
-                val (dynReply, dynLines) =
-                    CurrencyExchangePayloads.buildDynamicBankingJsonlForQuery(
-                        userQuery = activeCustomQuery,
-                        fallbackCaseIndex = selectedPrompt.coerceAtLeast(0),
-                    )
-                agentIntroOverride = dynReply
-                streamJsonlLinesProgressively(
-                    rawLines = dynLines,
-                    sourceLabel = "동적 A2UI 생성",
-                )
-            } else {
-                val fallbackLines = CurrencyExchangePayloads.buildJsonl(selectedPrompt.coerceAtLeast(0))
-                streamJsonlLinesProgressively(
-                    rawLines = fallbackLines,
-                    sourceLabel = "폴백 프리셋",
-                )
             }
-        } else {
-            if (pureTextReply != null) {
-                streamingStatusText = "💬 AI 금융비서가 답변을 작성 중입니다..."
-                delay(220L)
-                agentIntroOverride = pureTextReply
-                isStreaming = false
-                streamingStatusText = null
-            } else if (activeCustomQuery != null) {
-                streamingStatusText = "🤖 [1/3] createSurface 수신 중 · 서피스 초기화..."
-                val (dynReply, dynLines) =
-                    CurrencyExchangePayloads.buildDynamicBankingJsonlForQuery(
-                        userQuery = activeCustomQuery,
-                        fallbackCaseIndex = selectedPrompt.coerceAtLeast(0),
-                    )
-                agentIntroOverride = dynReply
-                streamJsonlLinesProgressively(
-                    rawLines = dynLines,
-                    sourceLabel = "동적 A2UI 생성",
-                )
-            } else {
-                streamingStatusText = "🤖 [1/3] createSurface 수신 중 · 서피스 초기화..."
-                val rawLines = CurrencyExchangePayloads.buildJsonl(selectedPrompt.coerceAtLeast(0))
-                streamJsonlLinesProgressively(
-                    rawLines = rawLines,
-                    sourceLabel = "프리셋 스트리밍",
-                )
-            }
-        }
     }
 
     if (showGeminiSettingsDialog) {
@@ -797,6 +1186,12 @@ fun CurrencyExchangeDemo(
                     )
             }
             resetGeneration += 1
+        },
+        onStopStreaming = {
+            activeGenerationJob?.cancel()
+            isStreaming = false
+            isActionSubmitting = false
+            streamingStatusText = "⏹️ 사용자 요청으로 AI 생성이 중지되었습니다."
         },
         onNavigateBack = onNavigateHome,
         onClearOutbound = {
@@ -913,6 +1308,19 @@ private fun extractStringField(ctx: Map<String, Any?>, vararg keys: String): Str
 
 private fun extractFirstSelectionOrString(ctx: Map<String, Any?>, vararg keys: String): String? =
     extractStringField(ctx, *keys)
+
+private fun extractBooleanField(
+    ctx: Map<String, Any?>,
+    key: String,
+    default: Boolean = false,
+): Boolean {
+    val v = lookupContextValue(ctx, key) ?: return default
+    return when (v) {
+        is Boolean -> v
+        is String -> v.trim().equals("true", ignoreCase = true)
+        else -> v.toString().trim().equals("true", ignoreCase = true)
+    }
+}
 
 private fun extractLongAmount(
     ctx: Map<String, Any?>,

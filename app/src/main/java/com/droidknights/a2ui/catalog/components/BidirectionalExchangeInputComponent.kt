@@ -1,6 +1,7 @@
 package com.droidknights.a2ui.catalog.components
 
 import androidx.a2ui.compose.runtime.A2uiComponentScope
+import androidx.a2ui.compose.ui.catalog.A2uiBasicCatalogV1
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,8 +39,11 @@ object BidirectionalExchangeInputComponent : DomainCatalogSchemas.BidirectionalE
         currencyLabel: String,
         exchangeRate: Double,
         unitScale: Double,
+        minAmount: Long,
+        banknoteUnit: Long,
         foreignAmount: Long,
         krwAmount: Long,
+        checks: List<A2uiBasicCatalogV1.CheckRule>,
         onForeignAmountChange: ((Number) -> Unit)?,
         onKrwAmountChange: ((Number) -> Unit)?,
         modifier: Modifier,
@@ -50,9 +54,30 @@ object BidirectionalExchangeInputComponent : DomainCatalogSchemas.BidirectionalE
         var krwText by remember { mutableStateOf(krwAmount.toString()) }
         var editingSide by remember { mutableStateOf<String?>(null) }
 
+        val currentForeign = foreignText.toLongOrNull() ?: foreignAmount
         val currentKrw = krwText.toLongOrNull() ?: krwAmount
         val isSellBackMode = currencyLabel.contains("재환전")
         val isOverBalance = !isSellBackMode && currentKrw > bankingState.mainAccountBalance
+
+        val coinRuleNote =
+            when (currencyCode.uppercase()) {
+                "JPY" -> "엔화 지폐 최소 권종: ${numberFormat.format(banknoteUnit)}엔권 (500엔·100엔 이하는 동전이므로 지폐 환전 불가)"
+                "EUR" -> "유로 지폐 최소 권종: ${numberFormat.format(banknoteUnit)}유로권 (1·2유로는 동전이므로 ${numberFormat.format(banknoteUnit)}유로 단위로만 신청 가능)"
+                "CHF" -> "스위스 프랑 지폐 최소 권종: ${numberFormat.format(banknoteUnit)}프랑권 (5프랑 이하는 동전이므로 ${numberFormat.format(banknoteUnit)}프랑 단위로만 신청 가능)"
+                else -> "미국 달러 최소 신청: ${numberFormat.format(minAmount)} USD 이상 (${numberFormat.format(banknoteUnit)}달러 지폐 단위 · 센트 동전 환전 불가)"
+            }
+        val failedA2uiCheck = checks.firstOrNull { !it.condition }
+        val isBelowMinAmount = currentForeign < minAmount
+        val isNonBanknoteUnit = currentForeign > 0L && (currentForeign % banknoteUnit != 0L)
+        val isInvalidDenomination = isBelowMinAmount || isNonBanknoteUnit || failedA2uiCheck != null
+        val suggestedBanknoteAmount =
+            when {
+                currentForeign <= minAmount -> minAmount
+                currentForeign % banknoteUnit != 0L ->
+                    ((currentForeign + banknoteUnit / 2) / banknoteUnit) * banknoteUnit
+                        .coerceAtLeast(minAmount)
+                else -> currentForeign
+            }
 
         LaunchedEffect(foreignAmount) {
             if (editingSide != "FOREIGN") {
@@ -117,8 +142,12 @@ object BidirectionalExchangeInputComponent : DomainCatalogSchemas.BidirectionalE
                         onForeignAmountChange?.invoke(parsed)
                         onKrwAmountChange?.invoke(calcKrw)
                     },
-                    isError = isOverBalance,
-                    label = { Text("받으실 외화 ($currencyCode)") },
+                    isError = isOverBalance || isInvalidDenomination,
+                    label = {
+                        Text(
+                            "받으실 외화 ($currencyCode · 최소 ${numberFormat.format(minAmount)} / ${numberFormat.format(banknoteUnit)}단위 지폐)"
+                        )
+                    },
                     suffix = {
                         Text(
                             text = "${numberFormat.format(foreignText.toLongOrNull() ?: 0L)} $currencyCode",
@@ -169,18 +198,51 @@ object BidirectionalExchangeInputComponent : DomainCatalogSchemas.BidirectionalE
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.error,
                     )
+                } else if (isInvalidDenomination) {
+                    val reasonText =
+                        when {
+                            isBelowMinAmount ->
+                                "⚠️ 최소 환전 신청 가능 금액은 ${numberFormat.format(minAmount)} $currencyCode 이상입니다. ($coinRuleNote)"
+                            isNonBanknoteUnit ->
+                                "⚠️ ${numberFormat.format(currentForeign % banknoteUnit)} $currencyCode 단위는 동전(주화)이므로 지폐 환전이 불가합니다. ($coinRuleNote)"
+                            failedA2uiCheck != null ->
+                                "⚠️ ${failedA2uiCheck.message}"
+                            else -> coinRuleNote
+                        }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = reasonText,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        SuggestionChip(
+                            onClick = {
+                                editingSide = null
+                                updateFromForeign(suggestedBanknoteAmount)
+                            },
+                            label = {
+                                Text(
+                                    text = "💵 지폐 단위로 자동 맞춤 (${numberFormat.format(suggestedBanknoteAmount)} $currencyCode)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            },
+                        )
+                    }
                 } else if (!isSellBackMode) {
                     Text(
                         text =
-                            "💳 출금 가능 잔액: ${numberFormat.format(bankingState.mainAccountBalance)}원 (환전 후 예상 잔액: ${numberFormat.format((bankingState.mainAccountBalance - currentKrw).coerceAtLeast(0L))}원)",
+                            "💳 출금 가능 잔액: ${numberFormat.format(bankingState.mainAccountBalance)}원 (환전 후 예상 잔액: ${numberFormat.format((bankingState.mainAccountBalance - currentKrw).coerceAtLeast(0L))}원)\n💡 $coinRuleNote",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
                 val presets =
-                    if (unitScale == 100.0) listOf(30000L, 50000L, 100000L)
-                    else listOf(500L, 1000L, 2000L)
+                    if (unitScale == 100.0) listOf(1000L, 10000L, 50000L, 100000L)
+                    else listOf(100L, 500L, 1000L, 2000L)
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     presets.forEach { preset ->

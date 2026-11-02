@@ -66,6 +66,353 @@ data class PendingBiometricRequest(
     val onCancel: () -> Unit,
 )
 
+data class PendingTermsAgreementRequest(
+    val agreeForexChecked: Boolean,
+    val agreePickupChecked: Boolean,
+    val onAgreeAllAndProceed: () -> Unit,
+    val onDismissToManualCheck: () -> Unit,
+)
+
+data class PendingDenominationRuleRequest(
+    val currency: String,
+    val requestedAmount: Long,
+    val adjustedBanknoteAmount: Long,
+    val adjustedKrwAmount: Long,
+    val ruleExplanation: String,
+    val onAutoAdjustAndProceed: () -> Unit,
+    val onDismissToEdit: () -> Unit,
+)
+
+/**
+ * Banknote Denomination & Minimum Exchange Rule dialog shown when the user enters a coin unit
+ * (e.g., 500 JPY, 1,500 JPY, 3 EUR, 5 CHF) or below-minimum amount and taps `환전 신청하기`.
+ */
+@Composable
+fun ExchangeDenominationRuleDialog(
+    request: PendingDenominationRuleRequest,
+) {
+    val fmt = remember { NumberFormat.getNumberInstance(Locale.KOREA) }
+    AlertDialog(
+        onDismissRequest = request.onDismissToEdit,
+        containerColor = Color.White,
+        titleContentColor = Color(0xFF191F28),
+        textContentColor = Color(0xFF191F28),
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier =
+                        Modifier.size(34.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFD9381E).copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(text = "💴", fontSize = 18.sp)
+                }
+                Column {
+                    Text(
+                        text = "외화 지폐 권종 단위 안내 (동전 환전 불가)",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF191F28),
+                    )
+                    Text(
+                        text = "시중은행 및 공항 수령은 지폐 최소 권종 단위로만 가능합니다",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF4E5968),
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    color = Color(0xFFFFF3F0),
+                    contentColor = Color(0xFF191F28),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text =
+                                "🚫 입력하신 금액: ${fmt.format(request.requestedAmount)} ${request.currency}",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFD9381E),
+                        )
+                        Text(
+                            text = request.ruleExplanation,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF191F28),
+                        )
+                    }
+                }
+
+                Surface(
+                    color = Color(0xFFF2F4F6),
+                    contentColor = Color(0xFF191F28),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = "🏦 통화별 실제 지폐 권종 및 최소 신청 기준",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF191F28),
+                        )
+                        Text(
+                            text =
+                                "• 🇯🇵 일본 엔 (JPY): 최소 1,000엔 · 1,000엔 지폐 단위\n" +
+                                    "  (500엔·100엔·50엔·10엔·5엔·1엔은 동전이므로 환전·수령 불가)\n" +
+                                    "• 🇺🇸 미국 달러 (USD): 최소 10달러 · 1달러 지폐 단위\n" +
+                                    "  (센트 동전 환전 불가 · 공항 ATM은 10·100달러권 수령)\n" +
+                                    "• 🇪🇺 유럽 유로 (EUR): 최소 10유로 · 5유로 지폐 단위\n" +
+                                    "  (1유로·2유로는 동전이므로 지폐 환전 불가)\n" +
+                                    "• 🇨🇭 스위스 프랑 (CHF): 최소 10프랑 · 10프랑 지폐 단위\n" +
+                                    "  (5프랑·2프랑·1프랑 이하는 동전이므로 지폐 환전 불가)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF4E5968),
+                        )
+                    }
+                }
+
+                Surface(
+                    color = Color(0xFFE8F3FF),
+                    contentColor = Color(0xFF191F28),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(
+                            text = "✅ 지폐 단위 자동 보정 금액",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF1B64DA),
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text =
+                                "${fmt.format(request.adjustedBanknoteAmount)} ${request.currency} (약 ${fmt.format(request.adjustedKrwAmount)}원)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF1B64DA),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = request.onAutoAdjustAndProceed,
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1B64DA),
+                        contentColor = Color.White,
+                    ),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text(
+                    text = "${fmt.format(request.adjustedBanknoteAmount)} ${request.currency}로 보정 후 계속",
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = request.onDismissToEdit) {
+                Text(
+                    text = "직접 금액 수정하기",
+                    color = Color(0xFF4E5968),
+                )
+            }
+        },
+    )
+}
+
+/**
+ * Mandatory Foreign Exchange Terms & Airport Pickup Agreement dialog shown when the user taps
+ * `환전 신청하기` without checking both mandatory A2UI CheckBoxes (`terms_forex_chk`, `terms_pickup_chk`).
+ */
+@Composable
+fun ExchangeTermsAgreementDialog(
+    request: PendingTermsAgreementRequest,
+) {
+    AlertDialog(
+        onDismissRequest = request.onDismissToManualCheck,
+        containerColor = Color.White,
+        titleContentColor = Color(0xFF191F28),
+        textContentColor = Color(0xFF191F28),
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier =
+                        Modifier.size(34.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1B64DA).copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(text = "📋", fontSize = 18.sp)
+                }
+                Column {
+                    Text(
+                        text = "외화 환전 필수 약관 동의",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF191F28),
+                    )
+                    Text(
+                        text = "A2UI 카드 하단의 필수 동의 약관 2건을 확인해 주세요",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF4E5968),
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    color = Color(0xFFFFF8E1),
+                    contentColor = Color(0xFF191F28),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        text =
+                            "⚠️ 필수 약관 체크박스가 선택되지 않았습니다. 아래 약관 내용을 읽으신 뒤 직접 체크하시거나 '전체 동의 후 계속'을 눌러주세요.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFFB45309),
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(10.dp),
+                    )
+                }
+
+                Surface(
+                    color = Color(0xFFF2F4F6),
+                    contentColor = Color(0xFF191F28),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = "1. [필수] 외국환거래법 및 환전 유의사항",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF191F28),
+                            )
+                            Text(
+                                text = if (request.agreeForexChecked) "동의함 ✅" else "미동의 ⬜",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color =
+                                    if (request.agreeForexChecked) Color(0xFF008A5E)
+                                    else Color(0xFFD9381E),
+                            )
+                        }
+                        Text(
+                            text =
+                                "• 비대면 인터넷 환전은 건당 미화 1만 불 상당액 이하 범위 내에서 신청 가능하며, 신청 완료 시점의 고시 환율(최대 90% 우대)이 즉시 적용됩니다.\n" +
+                                    "• 동일자 합산 미화 1만 불 초과 환전 시 외국환거래규정에 따라 국세청 및 관세청에 자동 통보됩니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF4E5968),
+                        )
+                    }
+                }
+
+                Surface(
+                    color = Color(0xFFF2F4F6),
+                    contentColor = Color(0xFF191F28),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                text = "2. [필수] 공항 여권 지참 및 환불 규정",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF191F28),
+                            )
+                            Text(
+                                text = if (request.agreePickupChecked) "동의함 ✅" else "미동의 ⬜",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color =
+                                    if (request.agreePickupChecked) Color(0xFF008A5E)
+                                    else Color(0xFFD9381E),
+                            )
+                        }
+                        Text(
+                            text =
+                                "• 인천국제공항(제1·2여객터미널) 무인환전기 및 창구 수령 시 본인 실물 여권과 모바일 QR 바우처를 반드시 지참하셔야 합니다 (타인 대리 수령 불가).\n" +
+                                    "• 외화 실물 수령 전까지는 앱 내 바우처 화면에서 언제든 신청 취소 및 원화 출금액 100% 즉시 환불이 가능합니다.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF4E5968),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = request.onAgreeAllAndProceed,
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1B64DA),
+                        contentColor = Color.White,
+                    ),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text(
+                    text = "약관 확인 · 전체 동의 후 계속",
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = request.onDismissToManualCheck) {
+                Text(
+                    text = "닫고 직접 체크하기",
+                    color = Color(0xFF4E5968),
+                )
+            }
+        },
+    )
+}
+
 /**
  * Realistic Korean mobile banking Biometric / PIN security verification dialog
  * triggered by `A2uiActionInterceptor` or native banking actions.
@@ -84,6 +431,9 @@ fun BiometricApprovalDialog(
 
     AlertDialog(
         onDismissRequest = request.onCancel,
+        containerColor = Color.White,
+        titleContentColor = Color(0xFF191F28),
+        textContentColor = Color(0xFF191F28),
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -362,12 +712,136 @@ fun BiometricApprovalDialog(
 }
 
 /**
+ * Genuine ISO/IEC 18004 Error-Correction-Level-M QR Code bit matrices for real camera scanning.
+ */
+enum class VoucherQrLinkTarget(
+    val label: String,
+    val url: String,
+    val matrixRows: List<String>,
+) {
+    GITHUB_REPO(
+        label = "🐙 GitHub 레포지토리",
+        url = "https://github.com/JAICHANGPARK/droidknight2026-a2ui",
+        matrixRows =
+            listOf(
+                "111111100111101110101101001111111",
+                "100000100010100110101100001000001",
+                "101110101000101100100100001011101",
+                "101110101110000100100000001011101",
+                "101110101000001111100111101011101",
+                "100000101101110000101000101000001",
+                "111111101010101010101010101111111",
+                "000000001010000010000101100000000",
+                "101111100101001000010000001111100",
+                "110110011010110111101101001101111",
+                "000110111000011101000000111010110",
+                "111011010010010101110100101011100",
+                "100000101011101110010001010111010",
+                "000100001101110100111011101000111",
+                "011110101101111111101010111010010",
+                "100001000110011100001100011111100",
+                "011000110011100110000010110110001",
+                "000010001000001110101101001101101",
+                "010110100011011110101010101110110",
+                "110110000101101010011100010111111",
+                "110010101011110100111000010111011",
+                "110010010011100111011101001001001",
+                "101000110010101000100000110101010",
+                "100110001001111010110110111001100",
+                "101100111011111000000011111110010",
+                "000000001110011111110001100010101",
+                "111111100101001101001111101010100",
+                "100000101010101011101111100011111",
+                "101110101111011010011010111111001",
+                "101110101001110100110001110010011",
+                "101110101101101110101010001101100",
+                "100000100111100100000110010011100",
+                "111111101100001100000011111100010",
+            ),
+    ),
+    LINKEDIN_PROFILE(
+        label = "💼 LinkedIn 프로필",
+        url = "https://www.linkedin.com/in/park-jaichang/",
+        matrixRows =
+            listOf(
+                "11111110001111100010001111111",
+                "10000010111011001100101000001",
+                "10111010111100110001001011101",
+                "10111010101011011100101011101",
+                "10111010001101001111101011101",
+                "10000010001000001000001000001",
+                "11111110101010101010101111111",
+                "00000000111110000001100000000",
+                "10000010101111110111011001110",
+                "10110000111100110111100110110",
+                "01111011010100010100001000000",
+                "00101101011100110001100101000",
+                "11010111000010001000101100001",
+                "01110001110111011111101010011",
+                "01100111000101111010111101100",
+                "01100100111110100000111110101",
+                "11101110000001100101000101100",
+                "10111101110110010111101110111",
+                "11001110110000010001100001001",
+                "10000001000000110010101110000",
+                "10011111110101000110111110111",
+                "00000000111001110110100011000",
+                "11111110011011110101101011100",
+                "10000010010110110001100010001",
+                "10111010010001110001111111010",
+                "10111010010100011001010101101",
+                "10111010001111011011011111110",
+                "10000010011001001010000101101",
+                "11111110101101110101001111100",
+            ),
+    ),
+}
+
+@Composable
+fun ScannableIsoQrCodeCanvas(
+    target: VoucherQrLinkTarget,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        color = Color.White,
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier,
+    ) {
+        Canvas(modifier = Modifier.padding(10.dp)) {
+            val rows = target.matrixRows
+            val gridSize = rows.size
+            val cell = size.width / gridSize
+            // Overlap by 0.6px so adjacent black modules have zero sub-pixel gaps for camera scanners
+            val moduleSize = Size(cell + 0.6f, cell + 0.6f)
+            for (r in 0 until gridSize) {
+                val rowStr = rows[r]
+                for (c in 0 until rowStr.length) {
+                    if (rowStr[c] == '1') {
+                        drawRect(
+                            color = Color.Black,
+                            topLeft = Offset(c * cell, r * cell),
+                            size = moduleSize,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
  * Visual QR Code Ticket Card for Airport Kiosk Foreign Currency Pickup.
  */
 @Composable
 fun ExchangeVoucherQrTicketCard(
     voucher: ExchangeVoucherItem,
     modifier: Modifier = Modifier,
+    qrTarget: VoucherQrLinkTarget =
+        if ((voucher.voucherCode.lastOrNull()?.digitToIntOrNull() ?: 0) % 2 == 0) {
+            VoucherQrLinkTarget.GITHUB_REPO
+        } else {
+            VoucherQrLinkTarget.LINKEDIN_PROFILE
+        },
 ) {
     val fmt = remember { NumberFormat.getNumberInstance(Locale.KOREA) }
     Card(
@@ -421,45 +895,11 @@ fun ExchangeVoucherQrTicketCard(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Crisp Deterministic QR Code Canvas
-                Surface(
-                    color = Color.White,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.size(96.dp),
-                ) {
-                    Canvas(modifier = Modifier.padding(8.dp)) {
-                        val gridSize = 13
-                        val cell = size.width / gridSize
-                        val seed = voucher.voucherCode.hashCode()
-
-                        fun isFinderPattern(r: Int, c: Int): Boolean {
-                            val topLeft = r in 0..3 && c in 0..3
-                            val topRight = r in 0..3 && c in (gridSize - 4) until gridSize
-                            val bottomLeft = r in (gridSize - 4) until gridSize && c in 0..3
-                            return topLeft || topRight || bottomLeft
-                        }
-
-                        for (r in 0 until gridSize) {
-                            for (c in 0 until gridSize) {
-                                val drawBlack =
-                                    if (isFinderPattern(r, c)) {
-                                        val lr = if (r >= gridSize - 4) r - (gridSize - 4) else r
-                                        val lc = if (c >= gridSize - 4) c - (gridSize - 4) else c
-                                        lr == 0 || lr == 3 || lc == 0 || lc == 3 || (lr in 1..2 && lc in 1..2)
-                                    } else {
-                                        ((r * 31 + c * 17 + seed) and 1) == 0
-                                    }
-                                if (drawBlack) {
-                                    drawRect(
-                                        color = Color(0xFF191F28),
-                                        topLeft = Offset(c * cell, r * cell),
-                                        size = Size(cell * 0.92f, cell * 0.92f),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+                // Real Camera-Scannable ISO/IEC 18004 QR Code
+                ScannableIsoQrCodeCanvas(
+                    target = qrTarget,
+                    modifier = Modifier.size(104.dp),
+                )
 
                 Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -488,6 +928,12 @@ fun ExchangeVoucherQrTicketCard(
                         color = Color(0xFF93C5FD),
                         fontWeight = FontWeight.SemiBold,
                     )
+                    Text(
+                        text = "🔗 QR 스캔: ${qrTarget.label}",
+                        fontSize = 11.sp,
+                        color = Color(0xFF34D399),
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
             }
         }
@@ -501,8 +947,19 @@ fun ExchangeVoucherQrDialog(
     onCancelVoucher: ((ExchangeVoucherItem) -> Unit)? = null,
 ) {
     val fmt = remember { NumberFormat.getNumberInstance(Locale.KOREA) }
+    val defaultTarget =
+        if ((voucher.voucherCode.lastOrNull()?.digitToIntOrNull() ?: 0) % 2 == 0) {
+            VoucherQrLinkTarget.GITHUB_REPO
+        } else {
+            VoucherQrLinkTarget.LINKEDIN_PROFILE
+        }
+    var selectedTarget by remember { mutableStateOf(defaultTarget) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        titleContentColor = Color(0xFF191F28),
+        textContentColor = Color(0xFF191F28),
         title = {
             Text(
                 text = "🎫 공항 무인환전기 QR 바우처",
@@ -511,10 +968,68 @@ fun ExchangeVoucherQrDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ExchangeVoucherQrTicketCard(voucher = voucher)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    VoucherQrLinkTarget.entries.forEach { target ->
+                        FilterChip(
+                            selected = selectedTarget == target,
+                            onClick = { selectedTarget = target },
+                            label = {
+                                Text(
+                                    text = target.label,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+
+                // Large crisp camera-scannable QR code in modal
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF191F28)),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(
+                            text = "${fmt.format(voucher.foreignAmount)} ${voucher.currency} · ${voucher.voucherCode}",
+                            color = Color(0xFFFFCC00),
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 15.sp,
+                        )
+                        ScannableIsoQrCodeCanvas(
+                            target = selectedTarget,
+                            modifier = Modifier.size(210.dp),
+                        )
+                        Text(
+                            text = selectedTarget.url,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            color = Color(0xFF93C5FD),
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            text = "📍 ${voucher.branchLabel} · ${voucher.pickupMethodLabel}",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.9f),
+                        )
+                    }
+                }
+
                 Text(
-                    text = "인천공항 환전 키오스크 바코드 리더기에 위 QR 코드를 스캔하고 본인 여권을 인식해 주세요. 수령 전이라면 언제든 환전 신청을 취소하고 출금액(${fmt.format(voucher.krwAmount)}원)을 환불받을 수 있습니다.",
+                    text = "스마트폰 기본 카메라로 위 QR 코드를 스캔하면 실제 링크(${selectedTarget.label})가 즉시 열립니다. 수령 전이라면 언제든 환전 신청을 취소하고 출금액(${fmt.format(voucher.krwAmount)}원)을 환불받을 수 있습니다.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -568,6 +1083,9 @@ fun NativeAccountLedgerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        titleContentColor = Color(0xFF191F28),
+        textContentColor = Color(0xFF191F28),
         title = {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -599,6 +1117,7 @@ fun NativeAccountLedgerDialog(
                 // Live Balance Banner
                 Surface(
                     color = Color(0xFFF2F4F6),
+                    contentColor = Color(0xFF191F28),
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -622,6 +1141,7 @@ fun NativeAccountLedgerDialog(
                         colors =
                             CardDefaults.cardColors(
                                 containerColor = Color(0xFFE8F3FF),
+                                contentColor = Color(0xFF191F28),
                             ),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth(),
@@ -636,10 +1156,10 @@ fun NativeAccountLedgerDialog(
                                 fontSize = 14.sp,
                                 color = Color(0xFF1B64DA),
                             )
-                            Text("• 예금주: 박제창 (Dreamwalker)", fontSize = 12.sp)
-                            Text("• 계좌종류: DK 주거래 입출금통장", fontSize = 12.sp)
-                            Text("• 계좌번호: 110-482-910284", fontSize = 12.sp)
-                            Text("• 발급일시: 2026.10.29 (직인생략)", fontSize = 12.sp)
+                            Text("• 예금주: 박제창 (Dreamwalker)", fontSize = 12.sp, color = Color(0xFF191F28))
+                            Text("• 계좌종류: DK 주거래 입출금통장", fontSize = 12.sp, color = Color(0xFF191F28))
+                            Text("• 계좌번호: 110-482-910284", fontSize = 12.sp, color = Color(0xFF191F28))
+                            Text("• 발급일시: 2026.10.29 (직인생략)", fontSize = 12.sp, color = Color(0xFF191F28))
                         }
                     }
                 }
@@ -773,6 +1293,9 @@ fun NativeQuickTransferDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        titleContentColor = Color(0xFF191F28),
+        textContentColor = Color(0xFF191F28),
         title = {
             Text(
                 text = if (transferCompleted) "✅ 송금 완료" else "💸 빠른 계좌 송금",
@@ -965,11 +1488,15 @@ fun NativeCardStatementDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        titleContentColor = Color(0xFF191F28),
+        textContentColor = Color(0xFF191F28),
         title = {
             Text(
                 text = if (paymentCompleted || currentBill == 0L) "✅ 11월 명세서 결제 완료" else "💳 11월 카드 명세서 상세",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
+                color = Color(0xFF191F28),
             )
         },
         text = {
@@ -978,6 +1505,7 @@ fun NativeCardStatementDialog(
                     Text(
                         text = "11월 카드 결제 예정 금액이 모두 납부되어 남은 결제 금액이 0원입니다.",
                         style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF191F28),
                     )
                     Text(
                         text = "현재 주거래 통장 잔액: ${fmt.format(bankingState.mainAccountBalance)}원",
@@ -988,6 +1516,7 @@ fun NativeCardStatementDialog(
                 } else {
                     Surface(
                         color = Color(0xFFF2F4F6),
+                        contentColor = Color(0xFF191F28),
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -1000,11 +1529,12 @@ fun NativeCardStatementDialog(
                                 text = "${fmt.format(currentBill)}원",
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF191F28),
                             )
-                            HorizontalDivider()
-                            Text("• 대한항공 도쿄 왕복 항공권: 684,000원", fontSize = 12.sp)
-                            Text("• 더현대 서울 백화점 (일시불): 892,314원", fontSize = 12.sp)
-                            Text("• 쿠팡·일상 생활비 (42건): 585,000원", fontSize = 12.sp)
+                            HorizontalDivider(color = Color(0xFFE5E8EB))
+                            Text("• 대한항공 도쿄 왕복 항공권: 684,000원", fontSize = 12.sp, color = Color(0xFF191F28))
+                            Text("• 더현대 서울 백화점 (일시불): 892,314원", fontSize = 12.sp, color = Color(0xFF191F28))
+                            Text("• 쿠팡·일상 생활비 (42건): 585,000원", fontSize = 12.sp, color = Color(0xFF191F28))
                         }
                     }
 
@@ -1021,6 +1551,7 @@ fun NativeCardStatementDialog(
                                 text = "보유 포인트 10,000P 차감 결제 (실출금 ${fmt.format(finalPayAmount)}원)",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF191F28),
                             )
                         }
                     }

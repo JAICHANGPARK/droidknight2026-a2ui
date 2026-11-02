@@ -623,6 +623,32 @@ class A2uiPayloadsVerificationTest {
                 .buildDynamicBankingJsonlForQuery("500달러 환전해 줘", 0)
         assertTrue("Expected 500 USD in reply, got: $replyUsd500", replyUsd500.contains("500 USD"))
         assertTrue("Expected usdAmount:500 in DataModel", linesUsd500[1].contains("\"usdAmount\":500"))
+
+        // 7. Verify A2UI Banknote Denomination Function & Schema Properties (1,000 JPY banknote rule vs 500 JPY coin)
+        val denomFn = com.droidknights.a2ui.catalog.functions.A2uiBanknoteDenominationFunction.INSTANCE
+        assertTrue("500 JPY must be rejected (coin)", !denomFn.typedExecute(value = 500L, min = 1_000L, unit = 1_000L))
+        assertTrue("1,500 JPY must be rejected (contains 500 JPY coin)", !denomFn.typedExecute(value = 1_500L, min = 1_000L, unit = 1_000L))
+        assertTrue("1,000 JPY must be accepted (1,000 JPY banknote)", denomFn.typedExecute(value = 1_000L, min = 1_000L, unit = 1_000L))
+        assertTrue("50,000 JPY must be accepted", denomFn.typedExecute(value = 50_000L, min = 1_000L, unit = 1_000L))
+        assertTrue("12 EUR must be rejected (1/2 EUR are coins, min banknote is 5 EUR)", !denomFn.typedExecute(value = 12L, min = 10L, unit = 5L))
+        assertTrue("15 EUR must be accepted", denomFn.typedExecute(value = 15L, min = 10L, unit = 5L))
+
+        val exchangeCatalog = com.droidknights.a2ui.catalog.domains.CurrencyExchangeCatalog.create()
+        val exchangeSchemaJson = exchangeCatalog.toJsonSchemaString()
+        assertTrue("Expected banknoteDenomination function in catalog JSON schema", exchangeSchemaJson.contains("\"banknoteDenomination\""))
+        assertTrue("Expected minAmount in BidirectionalExchangeInput schema", exchangeSchemaJson.contains("\"minAmount\""))
+        assertTrue("Expected banknoteUnit in BidirectionalExchangeInput schema", exchangeSchemaJson.contains("\"banknoteUnit\""))
+
+        val (replyJpy500, linesJpy500) =
+            com.droidknights.a2ui.scenarios.payloads.CurrencyExchangePayloads
+                .buildDynamicBankingJsonlForQuery("500엔 환전해 줘", 0)
+        assertTrue("Expected 500 JPY query to normalize to 1,000 JPY with coin notice, got: $replyJpy500", replyJpy500.contains("1,000 JPY"))
+        assertTrue("Expected jpyAmount:1000 in DataModel", linesJpy500[1].contains("\"jpyAmount\":1000"))
+        verifyStreamHasZeroErrors(
+            streamName = "CustomQuery_500JpyCoinNormalizedTo1000Jpy",
+            catalogs = listOf(exchangeCatalog),
+            lines = linesJpy500,
+        )
     }
 }
 
